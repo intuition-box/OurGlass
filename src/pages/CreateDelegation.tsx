@@ -13,6 +13,14 @@ import {
   type DelegationStruct,
 } from '../lib/delegations'
 import {
+  buildTerms,
+  buildAgreementDocument,
+  pinAgreement,
+  offlinePin,
+  type AgreementDocument,
+  type PinResult,
+} from '../lib/subscriptionTerms'
+import {
   type PeriodType,
   type CustomParam,
   periodLabel,
@@ -367,7 +375,10 @@ export default function CreateDelegation() {
 
       const environment = getEnvironment(safe.chainId)
       const now = Math.floor(Date.now() / 1000)
-      const salt = generateSalt()
+      let salt = generateSalt()
+      // Subscription contract (erc20 spending limit): pinned to IPFS, hash bound to the salt.
+      let agreement: AgreementDocument | undefined
+      let agreementPin: PinResult | undefined
 
       let sdkDelegation: any
       let metaLabel: string
@@ -401,6 +412,35 @@ export default function CreateDelegation() {
             afterThreshold: now,
             beforeThreshold: expiryTs,
           })
+        }
+
+        // Subscription: pin the human-readable contract to IPFS and bind the
+        // signature to it via salt = keccak256(terms). ERC-20 spending limits only.
+        if (permType === 'erc20') {
+          const terms = buildTerms({
+            organization: {
+              name: 'Organization',
+              recipient: delegate as Address,
+              delegate: delegate as Address,
+            },
+            subscriber: { label: 'Safe', account: safe.safeAddress as Address },
+            token: {
+              address: tokenAddress as Address,
+              symbol: getTokenSymbol(tokenOption),
+              decimals: tokenDecimals,
+            },
+            amountPerPeriod: amount,
+            periodSeconds: Number(periodToSeconds(period)),
+            startDate: now,
+          })
+          agreement = buildAgreementDocument({
+            id: `sub_${now}_${(safe.safeAddress as string).slice(2, 10).toLowerCase()}`,
+            chainId: safe.chainId,
+            terms,
+          })
+          const jwt = import.meta.env.VITE_PINATA_JWT
+          agreementPin = jwt ? await pinAgreement(agreement, jwt) : offlinePin(agreement)
+          salt = agreement.termsHash
         }
 
         sdkDelegation = createDelegation({
@@ -625,6 +665,9 @@ export default function CreateDelegation() {
           moduleAddress,
           status: 'signed',
           delegationHash,
+          agreement: agreementPin && agreement
+            ? { cid: agreementPin.cid, uri: agreementPin.uri, termsHash: agreement.termsHash }
+            : undefined,
           amount: category === 'spendingLimit' ? amount : category === 'swapIntent' ? swapAmount : category === 'custom' ? undefined : sendAmount,
           period: category === 'spendingLimit' ? period : category === 'swapIntent' ? swapPeriod : undefined,
           tokenAddress: category === 'spendingLimit'

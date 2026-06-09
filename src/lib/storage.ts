@@ -23,6 +23,8 @@ export interface StoredDelegation {
     moduleAddress: Address
     status: 'pending' | 'signed' | 'revoked'
     delegationHash: Hex
+    // Subscription contract pinned to IPFS, hash bound to the signature salt
+    agreement?: { cid: string; uri: string; termsHash: Hex }
     // Human-readable details
     amount?: string
     period?: string
