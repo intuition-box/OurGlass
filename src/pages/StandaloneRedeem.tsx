@@ -134,7 +134,7 @@ export default function StandaloneRedeem() {
 
   return (
     <div className="min-h-screen bg-base">
-      <header className="sticky top-0 z-10" style={{ background: 'rgba(8,11,18,.6)', backdropFilter: 'blur(8px)' }}>
+      <header className="sticky top-0 z-10 glass-strong">
         <div className="max-w-3xl mx-auto h-14 px-5 flex items-center justify-between border-b border-line">
           <Logo size={26} />
           <div className="flex items-center gap-2">
@@ -155,13 +155,13 @@ export default function StandaloneRedeem() {
               </div>
               <h2 className="text-lg font-bold text-ink mt-4">Charged gasless</h2>
               <p className="text-sm text-dim mt-1">{amount} USDC settled via the 1Shot relayer — no ETH spent.</p>
-              <div className="mt-5 rounded-xl bg-raised ring-1 ring-line p-4 text-left">
+              <div className="mt-5 rounded-xl glass-soft ring-1 ring-line p-4 text-left">
                 <div className="flex items-center justify-between"><span className="text-xs text-faint">Recipient</span><Mono className="text-xs text-dim">{short(recipient)}</Mono></div>
                 <div className="flex items-center justify-between mt-2"><span className="text-xs text-faint">Reference</span><Mono className="text-xs text-dim">{short(txHash)}</Mono></div>
               </div>
               <div className="mt-5 flex items-center justify-center gap-2">
                 {txHash.startsWith('0x') && txHash.length === 66 && (
-                  <a href={explorerTx(chainId, txHash)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-xl bg-raised ring-1 ring-line2 px-3 h-9 text-sm text-ink hover:bg-[#212B43] transition">
+                  <a href={explorerTx(chainId, txHash)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-xl glass-soft ring-1 ring-line2 px-3 h-9 text-sm text-ink hover:bg-[#212B43] transition">
                     View on explorer <IconExt size={13} className="opacity-60" />
                   </a>
                 )}
@@ -186,7 +186,7 @@ export default function StandaloneRedeem() {
                 className="rounded-2xl p-8 text-center cursor-pointer transition-colors"
                 style={{ boxShadow: 'inset 0 0 0 1.5px var(--color-line)' }}
               >
-                <div className="grid place-items-center w-11 h-11 rounded-2xl bg-raised ring-1 ring-line mx-auto text-faint"><IconDoc size={20} /></div>
+                <div className="grid place-items-center w-11 h-11 rounded-2xl glass-soft ring-1 ring-line mx-auto text-faint"><IconDoc size={20} /></div>
                 <p className="text-sm text-dim mt-3">Drop the subscription JSON or <span style={{ color: 'var(--accent)' }}>click to browse</span></p>
                 <input ref={fileRef} type="file" accept=".json" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
               </div>
@@ -211,7 +211,7 @@ export default function StandaloneRedeem() {
                 <StatusBadge status={sub.meta.status === 'revoked' ? 'revoked' : 'active'} size="sm" />
               </div>
 
-              <div className="mt-5 rounded-xl bg-raised ring-1 ring-line p-4 flex items-center justify-between">
+              <div className="mt-5 rounded-xl glass-soft ring-1 ring-line p-4 flex items-center justify-between">
                 <span className="text-xs text-faint flex items-center gap-1.5"><IconLock size={13} /> Period cap</span>
                 <span className="font-mono font-bold text-ink">{sub.meta.amount} <span className="text-dim text-sm font-semibold">USDC / {sub.meta.period}</span></span>
               </div>
