@@ -1,9 +1,0 @@
-{
-  "name": "OurGlass",
-  "description": "Gasless recurring USDC subscriptions for Safe \u2014 one signature, charged per period via 1Shot, with the contract pinned to IPFS.",
-  "iconPath": "logo.svg",
-  "providedBy": {
-    "name": "OurGlass",
-    "url": "https://github.com/Wieedze/gator-safe-app"
-  }
-}
