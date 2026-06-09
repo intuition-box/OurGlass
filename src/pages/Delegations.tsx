@@ -117,6 +117,24 @@ export default function Delegations() {
               <p className="text-xs text-gray-500 font-mono">
                 → {d.delegation.delegate}
               </p>
+              {d.meta.agreement && (
+                <p className="text-xs text-gray-500">
+                  contract:{' '}
+                  {d.meta.agreement.uri.startsWith('ipfs://local-') ? (
+                    <span title={d.meta.agreement.termsHash}>offline ({d.meta.agreement.cid})</span>
+                  ) : (
+                    <a
+                      href={`https://gateway.pinata.cloud/ipfs/${d.meta.agreement.cid}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={`terms hash ${d.meta.agreement.termsHash}`}
+                      className="text-emerald-400 hover:underline break-all"
+                    >
+                      {d.meta.agreement.uri}
+                    </a>
+                  )}
+                </p>
+              )}
             </div>
             <span
               className={`text-xs px-2 py-1 rounded ${
