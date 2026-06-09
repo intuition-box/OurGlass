@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ComponentType } from 'react'
 import { useSafeAppsSDK } from '@safe-global/safe-apps-react-sdk'
 import Home from './pages/Home'
 import CreateDelegation from './pages/CreateDelegation'
@@ -6,93 +6,84 @@ import Delegations from './pages/Delegations'
 import ImportDelegation from './pages/ImportDelegation'
 import RedeemDelegation from './pages/RedeemDelegation'
 import ModuleTransfer from './pages/ModuleTransfer'
+import { Logo } from './ui/components'
+import { IconGrid, IconReceipt, IconPlus, IconBolt, IconWallet, IconLink } from './ui/icons'
 
 type Page = 'home' | 'create' | 'delegations' | 'import' | 'redeem' | 'withdraw'
 
-function NavButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean
-  onClick: () => void
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-        active
-          ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-          : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
-      }`}
-    >
-      {children}
-    </button>
-  )
-}
+const NAV: { key: Page; label: string; icon: ComponentType<{ size?: number }> }[] = [
+  { key: 'home', label: 'Overview', icon: IconGrid },
+  { key: 'delegations', label: 'Subscriptions', icon: IconReceipt },
+  { key: 'create', label: 'New subscription', icon: IconPlus },
+  { key: 'redeem', label: 'Charge', icon: IconBolt },
+  { key: 'withdraw', label: 'Withdraw', icon: IconWallet },
+  { key: 'import', label: 'Import', icon: IconLink },
+]
 
 function AppInner() {
   const { safe } = useSafeAppsSDK()
   const [page, setPage] = useState<Page>('home')
+  const short = `${safe.safeAddress.slice(0, 6)}…${safe.safeAddress.slice(-4)}`
 
   return (
-    <div className="min-h-screen bg-[#0c0c0c]">
-      {/* Disclaimer */}
-      <div className="bg-amber-500/10 border-b border-amber-500/30 px-6 py-2">
-        <p className="max-w-4xl mx-auto text-xs text-amber-400/80 text-center">
-          ⚠️ This app was built by an AI agent (<a href="https://x.com/Osobotai" target="_blank" rel="noopener noreferrer" className="underline hover:text-amber-300">Osobot</a>). The smart contracts are all audited, but this app was made by an AI agent bro — use at your own risk.
-        </p>
-      </div>
-
-      {/* Header */}
-      <header className="border-b border-white/10 px-6 py-4">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">🐊</span>
-            <div>
-              <h1 className="text-lg font-semibold text-white">SubscRight</h1>
-              <p className="text-xs text-gray-500 font-mono">
-                {safe.safeAddress.slice(0, 6)}...{safe.safeAddress.slice(-4)} · Chain {safe.chainId}
-              </p>
-            </div>
+    <div className="min-h-screen">
+      {/* Top context bar (Safe provides this in the real iframe) */}
+      <div className="sticky top-0 z-20" style={{ background: 'rgba(8,11,18,.6)', backdropFilter: 'blur(8px)' }}>
+        <div className="max-w-[1180px] mx-auto h-12 px-5 flex items-center justify-between border-b border-line">
+          <div className="text-xs text-faint font-medium">Safe / Apps / <span className="text-dim">SubscRight</span></div>
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-raised ring-1 ring-line px-2.5 py-1 text-xs text-dim">
+              <span className="w-1.5 h-1.5 rounded-full bg-active" /> Chain {safe.chainId}
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-raised ring-1 ring-line px-2.5 py-1 text-xs font-mono text-dim">
+              {short}
+            </span>
           </div>
         </div>
-      </header>
+      </div>
 
-      {/* Navigation */}
-      <nav className="border-b border-white/5 px-6 py-3">
-        <div className="max-w-4xl mx-auto flex gap-2">
-          <NavButton active={page === 'home'} onClick={() => setPage('home')}>
-            Home
-          </NavButton>
-          <NavButton active={page === 'create'} onClick={() => setPage('create')}>
-            Create
-          </NavButton>
-          <NavButton active={page === 'delegations'} onClick={() => setPage('delegations')}>
-            Delegations
-          </NavButton>
-          <NavButton active={page === 'import'} onClick={() => setPage('import')}>
-            Import
-          </NavButton>
-          <NavButton active={page === 'redeem'} onClick={() => setPage('redeem')}>
-            Redeem
-          </NavButton>
-          <NavButton active={page === 'withdraw'} onClick={() => setPage('withdraw')}>
-            Withdraw
-          </NavButton>
-        </div>
-      </nav>
+      <div className="max-w-[1180px] mx-auto px-5 py-6 grid grid-cols-[220px_1fr] gap-6">
+        {/* Sidebar */}
+        <aside className="flex flex-col gap-5">
+          <Logo />
+          <nav className="flex flex-col gap-1">
+            {NAV.map(({ key, label, icon: Icon }) => {
+              const active = page === key
+              return (
+                <button
+                  key={key}
+                  onClick={() => setPage(key)}
+                  className={`group flex items-center gap-3 rounded-xl px-3 h-10 text-sm font-medium transition-colors ${
+                    active ? 'bg-raised text-ink ring-1 ring-line2' : 'text-dim hover:text-ink hover:bg-raised'
+                  }`}
+                >
+                  <span style={{ color: active ? 'var(--accent)' : undefined }}>
+                    <Icon size={18} />
+                  </span>
+                  {label}
+                </button>
+              )
+            })}
+          </nav>
 
-      {/* Content */}
-      <main className="max-w-4xl mx-auto px-6 py-8">
-        {page === 'home' && <Home onNavigate={setPage} />}
-        {page === 'create' && <CreateDelegation />}
-        {page === 'delegations' && <Delegations />}
-        {page === 'import' && <ImportDelegation />}
-        {page === 'redeem' && <RedeemDelegation />}
-        {page === 'withdraw' && <ModuleTransfer />}
-      </main>
+          <div className="mt-auto rounded-2xl p-4 ring-1 ring-line bg-panel" style={{ boxShadow: 'var(--shadow-card)' }}>
+            <div className="text-sm font-semibold text-ink">Sign once. Charged every period.</div>
+            <div className="text-xs text-dim leading-relaxed mt-1">
+              <span style={{ color: 'var(--accent)' }}>Gasless</span> · capped on-chain · revocable any time.
+            </div>
+          </div>
+        </aside>
+
+        {/* Content */}
+        <main className="app-scroll overflow-y-auto rise" style={{ maxHeight: 'calc(100vh - 96px)' }}>
+          {page === 'home' && <Home onNavigate={setPage} />}
+          {page === 'create' && <CreateDelegation />}
+          {page === 'delegations' && <Delegations />}
+          {page === 'import' && <ImportDelegation />}
+          {page === 'redeem' && <RedeemDelegation />}
+          {page === 'withdraw' && <ModuleTransfer />}
+        </main>
+      </div>
     </div>
   )
 }
