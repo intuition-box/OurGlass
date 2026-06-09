@@ -9,6 +9,7 @@ import { wagmiConfig } from './config/chains'
 import web3AuthContextConfig from './web3authContext'
 import App from './App'
 import StandaloneRedeem from './pages/StandaloneRedeem'
+import { Logo } from './ui/components'
 import './index.css'
 
 const queryClient = new QueryClient()
@@ -31,10 +32,13 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         <QueryClientProvider client={queryClient}>
           <SafeProvider
             loader={
-              <div className="flex items-center justify-center min-h-screen bg-[#0c0c0c]">
-                <div className="text-center">
-                  <div className="text-4xl mb-4">🐊</div>
-                  <p className="text-gray-400 text-sm">Connecting to Safe...</p>
+              <div className="flex items-center justify-center min-h-screen bg-base">
+                <div className="flex flex-col items-center gap-4">
+                  <Logo size={34} />
+                  <div className="flex items-center gap-2 text-sm text-dim">
+                    <span className="w-4 h-4 border-2 border-line border-t-[color:var(--accent)] rounded-full animate-spin" />
+                    Connecting to Safe…
+                  </div>
                 </div>
               </div>
             }
