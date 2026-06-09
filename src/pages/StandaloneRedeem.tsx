@@ -134,7 +134,7 @@ export default function StandaloneRedeem() {
   const httpUri = sub?.meta.agreement && !sub.meta.agreement.uri.startsWith('ipfs://local-') ? ipfsToHttp(sub.meta.agreement.uri) : undefined
 
   return (
-    <div className="min-h-screen bg-base">
+    <div className="min-h-screen">
       <header className="sticky top-0 z-10 glass-strong">
         <div className="max-w-3xl mx-auto h-14 px-5 flex items-center justify-between border-b border-line">
           <Logo size={26} />

@@ -8,7 +8,7 @@ import { IconBolt, IconArrowR } from '../ui/icons'
  */
 export default function Landing() {
   return (
-    <div className="min-h-screen bg-base flex items-center justify-center px-6">
+    <div className="min-h-screen flex items-center justify-center px-6">
       <div className="flex flex-col items-center text-center max-w-md">
         <Logo size={40} />
         <h1 className="mt-6 text-2xl font-extrabold tracking-tight text-ink">Sign once. Charged every period.</h1>
