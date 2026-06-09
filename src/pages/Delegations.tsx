@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useSafeAppsSDK } from '@safe-global/safe-apps-react-sdk'
-import { encodeFunctionData } from 'viem'
+import { encodeFunctionData, encodePacked, pad, parseAbi, type Hex } from 'viem'
 import { getDelegations, updateDelegationStatus, removeDelegation, type StoredDelegation } from '../lib/storage'
 import { DelegationManagerABI } from '../config/abis'
 import { getAddresses } from '../config/addresses'
@@ -11,6 +11,14 @@ import { IconCube, IconExt, IconLock, IconStop, IconReceipt, IconX, IconCal } fr
 const chainName = (id: number) => (id === 84532 ? 'Base Sepolia' : id === 11155111 ? 'Ethereum Sepolia' : id === 8453 ? 'Base' : `Chain ${id}`)
 const statusOf = (s: StoredDelegation['meta']['status']): Status => (s === 'signed' ? 'active' : s === 'revoked' ? 'revoked' : 'pending')
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
+// ERC-7579 single-call execution mode + the module's execute() entrypoint.
+// disableDelegation must come from the delegator (the module), so we route the
+// call through module.execute() — msg.sender at the DelegationManager is then
+// the module, satisfying its delegator == msg.sender check. Sending it straight
+// from the Safe reverts (InvalidDelegator → GS013).
+const SINGLE_DEFAULT_MODE: Hex = pad('0x00', { size: 32 })
+const MODULE_EXECUTE_ABI = parseAbi(['function execute(bytes32 mode, bytes calldata executionCalldata) payable'])
+
 const tintFor = (addr: string) => {
   const palette = ['#3B82F6', '#22D3EE', '#8B5CF6', '#34D399', '#FB7185', '#FBBF24']
   let h = 0
@@ -36,26 +44,30 @@ export default function Delegations() {
     setRevoking(d.meta.delegationHash)
     try {
       const addrs = getAddresses(safe.chainId)
-      const txs = [
-        {
-          to: addrs.delegationManager,
-          value: '0',
-          data: encodeFunctionData({
-            abi: DelegationManagerABI,
-            functionName: 'disableDelegation',
-            args: [
-              {
-                delegate: d.delegation.delegate,
-                delegator: d.delegation.delegator,
-                authority: d.delegation.authority,
-                caveats: d.delegation.caveats,
-                salt: BigInt(d.delegation.salt),
-                signature: d.delegation.signature,
-              },
-            ],
-          }),
-        },
-      ]
+      const disableData = encodeFunctionData({
+        abi: DelegationManagerABI,
+        functionName: 'disableDelegation',
+        args: [
+          {
+            delegate: d.delegation.delegate,
+            delegator: d.delegation.delegator,
+            authority: d.delegation.authority,
+            caveats: d.delegation.caveats,
+            salt: BigInt(d.delegation.salt),
+            signature: d.delegation.signature,
+          },
+        ],
+      })
+      const executionCalldata = encodePacked(
+        ['address', 'uint256', 'bytes'],
+        [addrs.delegationManager, 0n, disableData],
+      )
+      const executeData = encodeFunctionData({
+        abi: MODULE_EXECUTE_ABI,
+        functionName: 'execute',
+        args: [SINGLE_DEFAULT_MODE, executionCalldata],
+      })
+      const txs = [{ to: d.meta.moduleAddress, value: '0', data: executeData }]
       await sdk.txs.send({ txs })
       updateDelegationStatus(d.meta.delegationHash, 'revoked')
       loadDelegations()
