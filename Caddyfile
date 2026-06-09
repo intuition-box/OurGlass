@@ -1,0 +1,26 @@
+# Serves the built Safe App with the CORS header Safe requires to fetch
+# manifest.json cross-origin (app.safe.global -> ourglass.intuition.box).
+# Without Access-Control-Allow-Origin the browser blocks the fetch and Safe
+# reports "doesn't support Safe App functionality".
+:80 {
+	root * /srv
+	encode gzip
+
+	# CORS for every asset (manifest.json is the one Safe actually needs).
+	header {
+		Access-Control-Allow-Origin "*"
+		Access-Control-Allow-Methods "GET, OPTIONS"
+		Access-Control-Allow-Headers "*"
+		# Allow being framed inside the Safe web app iframe.
+		-X-Frame-Options
+	}
+
+	# Answer CORS preflight without hitting the SPA fallback.
+	@options method OPTIONS
+	respond @options 204
+
+	# SPA fallback: real files (manifest.json, logo.svg, assets/*) win;
+	# everything else serves index.html so client-side routing works.
+	try_files {path} /index.html
+	file_server
+}
