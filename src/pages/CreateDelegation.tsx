@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useSafeAppsSDK } from '@safe-global/safe-apps-react-sdk'
 import { createPublicClient, http, isAddress, parseUnits, type Address, type Hex } from 'viem'
 import { baseSepolia, base, sepolia } from 'viem/chains'
@@ -19,6 +19,7 @@ import {
 import { periodToSeconds, periodLabel, type PeriodType } from '../lib/enforcers'
 import { getEnvironment } from '../lib/environment'
 import { saveDelegation, type StoredDelegation } from '../lib/storage'
+import { getCapabilities, relayerUrlForChain, type ChainCapabilities } from '../lib/relayer1shot'
 import { Card, Btn, GaslessButton, USDC, Mono, CopyChip, Payee, StatusBadge } from '../ui/components'
 import { IconCube, IconLock, IconCheck, IconExt, IconHash, IconCal } from '../ui/icons'
 
@@ -66,7 +67,7 @@ export default function CreateDelegation() {
   const { sdk, safe } = useSafeAppsSDK()
 
   const [payeeName, setPayeeName] = useState('')
-  const [delegate, setDelegate] = useState('')
+  const [recipient, setRecipient] = useState('')
   const [amount, setAmount] = useState('')
   const [period, setPeriod] = useState<PeriodType>('monthly')
   const [useCustomToken, setUseCustomToken] = useState(false)
@@ -80,6 +81,22 @@ export default function CreateDelegation() {
   const [pinnedCid, setPinnedCid] = useState<string | null>(null)
   const [signed, setSigned] = useState<StoredDelegation | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [caps, setCaps] = useState<ChainCapabilities | null>(null)
+  const [capsError, setCapsError] = useState<string | null>(null)
+
+  // The delegate is always the 1Shot relayer so every charge is gasless. The
+  // user never sees it — they only choose where the funds are paid (recipient).
+  useEffect(() => {
+    let cancelled = false
+    setCaps(null)
+    setCapsError(null)
+    getCapabilities(relayerUrlForChain(safe.chainId), safe.chainId)
+      .then((c) => !cancelled && setCaps(c))
+      .catch((e: unknown) => !cancelled && setCapsError(e instanceof Error ? e.message : 'Relayer unavailable'))
+    return () => {
+      cancelled = true
+    }
+  }, [safe.chainId])
 
   const defaultUsdc = USDC_BY_CHAIN[safe.chainId]
   const tokenAddress = useCustomToken ? customToken : defaultUsdc
@@ -87,18 +104,18 @@ export default function CreateDelegation() {
   const tokenSymbol = useCustomToken ? 'tokens' : 'USDC'
 
   const amountValid = !!amount && parseFloat(amount) > 0
-  const delegateValid = isAddress(delegate)
+  const recipientValid = isAddress(recipient)
   const tokenValid = !!tokenAddress && isAddress(tokenAddress)
   const expiryValid = !expiryEnabled || !!expiryDate
-  const canSign = amountValid && delegateValid && tokenValid && expiryValid && !signing
+  const canSign = amountValid && recipientValid && tokenValid && expiryValid && !!caps && !signing
 
   // Live agreement preview — recomputed as the form changes, so the contract
   // hash the subscriber commits to is visible before signing.
   const preview = useMemo<AgreementDocument | null>(() => {
-    if (!amountValid || !tokenValid) return null
+    if (!amountValid || !tokenValid || !recipientValid || !caps) return null
     try {
       const terms = buildTerms({
-        organization: { name: payeeName || 'Organization', recipient: delegate as Address, delegate: delegate as Address },
+        organization: { name: payeeName || 'Organization', recipient: recipient as Address, delegate: caps.targetAddress },
         subscriber: { label: 'Safe', account: safe.safeAddress as Address },
         token: { address: tokenAddress as Address, symbol: tokenSymbol, decimals: tokenDecimals },
         amountPerPeriod: amount,
@@ -109,7 +126,7 @@ export default function CreateDelegation() {
     } catch {
       return null
     }
-  }, [amount, amountValid, tokenValid, tokenAddress, tokenDecimals, tokenSymbol, payeeName, delegate, period, expiryEnabled, expiryDate, safe.chainId, safe.safeAddress])
+  }, [amount, amountValid, tokenValid, recipientValid, caps, tokenAddress, tokenDecimals, tokenSymbol, payeeName, recipient, period, expiryEnabled, expiryDate, safe.chainId, safe.safeAddress])
 
   async function handleSign() {
     setSigning(true)
@@ -117,6 +134,8 @@ export default function CreateDelegation() {
     setPinnedCid(null)
     setError(null)
     try {
+      if (!caps) throw new Error('Relayer capabilities not loaded')
+      const delegate = caps.targetAddress
       const chain = chains[safe.chainId]
       if (!chain) throw new Error(`Unsupported chain: ${safe.chainId}`)
       const client = createPublicClient({ chain, transport: http() })
@@ -135,7 +154,7 @@ export default function CreateDelegation() {
 
       // Pin the human-readable contract and bind the signature to it: salt = keccak256(terms).
       const terms = buildTerms({
-        organization: { name: payeeName || 'Organization', recipient: delegate as Address, delegate: delegate as Address },
+        organization: { name: payeeName || 'Organization', recipient: recipient as Address, delegate },
         subscriber: { label: 'Safe', account: safe.safeAddress as Address },
         token: { address: tokenAddress as Address, symbol: tokenSymbol, decimals: tokenDecimals },
         amountPerPeriod: amount,
@@ -159,7 +178,7 @@ export default function CreateDelegation() {
         : undefined
 
       const sdkDelegation = createDelegation({
-        to: delegate as Address,
+        to: delegate,
         from: moduleAddress,
         environment: environment as never,
         scope: {
@@ -203,6 +222,7 @@ export default function CreateDelegation() {
           period,
           tokenAddress: tokenAddress as Address,
           expiryDate: expiryEnabled ? expiryDate : undefined,
+          recipient: recipient as Address,
         },
       }
       saveDelegation(stored)
@@ -218,7 +238,7 @@ export default function CreateDelegation() {
   function reset() {
     setSigned(null)
     setPayeeName('')
-    setDelegate('')
+    setRecipient('')
     setAmount('')
     setPeriod('monthly')
     setExpiryEnabled(false)
@@ -244,7 +264,7 @@ export default function CreateDelegation() {
           </div>
 
           <div className="mt-5 rounded-xl bg-raised ring-1 ring-line divide-y divide-line">
-            <Row label="Payee"><Payee logo={(signed.delegation.delegate.slice(2, 4)).toUpperCase()} tint="#3B82F6" name={signed.meta.label} addr={short(signed.delegation.delegate)} size={32} /></Row>
+            <Row label="Payee"><Payee logo={((signed.meta.recipient ?? signed.delegation.delegate).slice(2, 4)).toUpperCase()} tint="#3B82F6" name={signed.meta.label} addr={short(signed.meta.recipient ?? signed.delegation.delegate)} size={32} /></Row>
             <Row label="Charge"><span className="font-mono font-semibold text-ink">{signed.meta.amount} {signed.meta.tokenAddress ? 'USDC' : ''} / {signed.meta.period}</span></Row>
             <Row label="Contract hash"><Mono className="text-xs text-dim">{short(signed.meta.agreement!.termsHash)}</Mono></Row>
             <Row label="Delegation hash"><Mono className="text-xs text-dim">{short(signed.meta.delegationHash)}</Mono></Row>
@@ -282,9 +302,10 @@ export default function CreateDelegation() {
             <input type="text" placeholder="Acme Inc." value={payeeName} onChange={(e) => setPayeeName(e.target.value)} />
           </Field>
 
-          <Field label="Payee address" hint="The account allowed to charge (the delegate).">
-            <input type="text" placeholder="0x…" value={delegate} onChange={(e) => setDelegate(e.target.value)} />
-            {delegate && !delegateValid && <p className="text-xs text-danger mt-1">Invalid address</p>}
+          <Field label="Payee address" hint="Where the funds are paid each period. Charges are settled gaslessly by the 1Shot relayer.">
+            <input type="text" placeholder="0x…" value={recipient} onChange={(e) => setRecipient(e.target.value)} />
+            {recipient && !recipientValid && <p className="text-xs text-danger mt-1">Invalid address</p>}
+            {capsError && <p className="text-xs text-pending mt-1">Relayer: {capsError}</p>}
           </Field>
 
           <div className="grid grid-cols-2 gap-4">
@@ -329,7 +350,7 @@ export default function CreateDelegation() {
 
           <div>
             <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input type="checkbox" checked={expiryEnabled} onChange={(e) => setExpiryEnabled(e.target.checked)} className="w-4 h-4" style={{ accentColor: 'var(--accent)' }} />
+              <input type="checkbox" checked={expiryEnabled} onChange={(e) => setExpiryEnabled(e.target.checked)} />
               <span className="text-sm text-dim flex items-center gap-1.5"><IconCal size={14} /> Set an end date</span>
             </label>
             {expiryEnabled && <input type="datetime-local" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} className="mt-2" />}
@@ -349,7 +370,7 @@ export default function CreateDelegation() {
             <PreviewRow label="Subscriber"><Mono className="text-xs text-dim">{short(safe.safeAddress)}</Mono></PreviewRow>
             <PreviewRow label="Payee">
               <span className="text-ink truncate">{payeeName || 'Organization'}</span>
-              {delegateValid && <Mono className="text-[11px] text-faint block">{short(delegate)}</Mono>}
+              {recipientValid && <Mono className="text-[11px] text-faint block">{short(recipient)}</Mono>}
             </PreviewRow>
             <div className="rounded-xl bg-raised ring-1 ring-line p-3">
               <div className="text-faint text-xs">Charges</div>

@@ -62,7 +62,7 @@ export default function Charge() {
   function pick(d: StoredDelegation) {
     setSelected(d)
     setAmount(d.meta.amount ?? '')
-    setRecipient('')
+    setRecipient(d.meta.recipient ?? '')
     setError(null)
     setTxHash(null)
   }

@@ -12,7 +12,7 @@ type Page = 'home' | 'create' | 'delegations' | 'import' | 'redeem' | 'withdraw'
 
 const NAV: { key: Page; label: string; icon: ComponentType<{ size?: number }> }[] = [
   { key: 'home', label: 'Overview', icon: IconGrid },
-  { key: 'create', label: 'New subscription', icon: IconPlus },
+  { key: 'create', label: 'Subscribe', icon: IconPlus },
   { key: 'redeem', label: 'Charge', icon: IconBolt },
   { key: 'withdraw', label: 'Withdraw', icon: IconWallet },
   { key: 'import', label: 'Import', icon: IconLink },
