@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useSafeAppsSDK } from '@safe-global/safe-apps-react-sdk'
 import { createPublicClient, http, isAddress, parseUnits, type Address, type Hex } from 'viem'
-import { baseSepolia, base } from 'viem/chains'
+import { baseSepolia, base, sepolia } from 'viem/chains'
 import { createDelegation } from '@metamask/smart-accounts-kit'
 import { DeleGatorModuleFactoryABI } from '../config/abis'
 import { getAddresses } from '../config/addresses'
@@ -22,11 +22,12 @@ import { saveDelegation, type StoredDelegation } from '../lib/storage'
 import { Card, Btn, GaslessButton, USDC, Mono, CopyChip, Payee, StatusBadge } from '../ui/components'
 import { IconCube, IconLock, IconCheck, IconExt, IconHash, IconCal } from '../ui/icons'
 
-const chains: Record<number, typeof baseSepolia | typeof base> = { 84532: baseSepolia, 8453: base }
+const chains: Record<number, typeof baseSepolia | typeof base | typeof sepolia> = { 84532: baseSepolia, 11155111: sepolia, 8453: base }
 
 // USDC is the subscription settlement token on every supported chain (6 decimals).
 const USDC_BY_CHAIN: Record<number, Address> = {
   84532: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+  11155111: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
   8453: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
 }
 const PERIODS: PeriodType[] = ['daily', 'weekly', 'monthly']

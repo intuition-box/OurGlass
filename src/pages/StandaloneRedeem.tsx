@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPublicClient, http, isAddress, parseUnits, erc20Abi, type Address, type Hex, type PublicClient } from 'viem'
-import { baseSepolia, base } from 'viem/chains'
+import { baseSepolia, base, sepolia } from 'viem/chains'
 import { importDelegationsJson, type StoredDelegation } from '../lib/storage'
 import { ipfsToHttp } from '../lib/subscriptionTerms'
 import {
@@ -14,11 +14,13 @@ import {
 import { Logo, Card, Btn, GaslessButton, StatusBadge, Payee, Mono } from '../ui/components'
 import { IconBolt, IconExt, IconAlert, IconLock, IconDoc, IconCube, IconArrowL } from '../ui/icons'
 
-const CHAINS: { id: number; label: string; chain: typeof baseSepolia | typeof base }[] = [
+const CHAINS: { id: number; label: string; chain: typeof baseSepolia | typeof base | typeof sepolia }[] = [
   { id: 84532, label: 'Base Sepolia', chain: baseSepolia },
+  { id: 11155111, label: 'Ethereum Sepolia', chain: sepolia },
   { id: 8453, label: 'Base', chain: base },
 ]
-const explorerTx = (id: number, h: string) => (id === 84532 ? `https://sepolia.basescan.org/tx/${h}` : `https://basescan.org/tx/${h}`)
+const explorerTx = (id: number, h: string) =>
+  id === 84532 ? `https://sepolia.basescan.org/tx/${h}` : id === 11155111 ? `https://sepolia.etherscan.io/tx/${h}` : `https://basescan.org/tx/${h}`
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
 const tintFor = (addr: string) => {
   const palette = ['#3B82F6', '#22D3EE', '#8B5CF6', '#34D399', '#FB7185', '#FBBF24']

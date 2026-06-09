@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* SubscRight design system — tokens (Tailwind v4 @theme) */
+/* OurGlass design system — tokens (Tailwind v4 @theme) */
 @theme {
   --color-base: #080b12;
   --color-surface: #0e1320;
@@ -38,15 +38,52 @@ html, body { height: 100%; }
 body {
   margin: 0;
   background:
-    radial-gradient(1200px 700px at 80% -10%, rgba(59, 130, 246, 0.1), transparent 60%),
-    radial-gradient(900px 600px at 0% 110%, rgba(34, 211, 238, 0.06), transparent 55%),
+    radial-gradient(1100px 680px at 82% -12%, rgba(59, 130, 246, 0.16), transparent 58%),
+    radial-gradient(820px 560px at 4% 108%, rgba(34, 211, 238, 0.1), transparent 56%),
+    radial-gradient(760px 760px at 50% 42%, rgba(59, 130, 246, 0.05), transparent 70%),
     #080b12;
+  background-attachment: fixed;
   color: #eaeef6;
   min-height: 100vh;
 }
 
 .tnum { font-variant-numeric: tabular-nums; }
 ::selection { background: var(--accent-soft); }
+
+/* glassmorphism surfaces — translucent panels over the ambient blue glow.
+   The frosted top-edge highlight (inset shadow) sells the "pane of glass" look. */
+.glass {
+  background: rgba(19, 26, 42, 0.55);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
+}
+.glass-soft {
+  background: rgba(26, 34, 54, 0.4);
+  backdrop-filter: blur(10px) saturate(130%);
+  -webkit-backdrop-filter: blur(10px) saturate(130%);
+}
+.glass-strong {
+  background: rgba(14, 19, 32, 0.62);
+  backdrop-filter: blur(22px) saturate(140%);
+  -webkit-backdrop-filter: blur(22px) saturate(140%);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
+}
+
+@keyframes og-token-drop {
+  0% { transform: translateY(-4px); opacity: 0; }
+  18% { opacity: 1; }
+  82% { opacity: 1; }
+  100% { transform: translateY(5px); opacity: 0; }
+}
+.og-token-drop {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: og-token-drop 1.8s cubic-bezier(0.45, 0, 0.7, 1) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .og-token-drop { animation: none; }
+}
 
 /* thin scrollbars */
 .app-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -60,7 +97,9 @@ body {
 
 /* form fields */
 input, textarea, select {
-  background: #1a2236;
+  background: rgba(26, 34, 54, 0.45);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   border: 1px solid #232c42;
   color: #eaeef6;
   border-radius: 12px;

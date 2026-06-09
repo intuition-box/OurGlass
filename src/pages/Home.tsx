@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useSafeAppsSDK } from '@safe-global/safe-apps-react-sdk'
 import { createPublicClient, http, type Address } from 'viem'
-import { baseSepolia, base } from 'viem/chains'
+import { baseSepolia, base, sepolia } from 'viem/chains'
 import { DeleGatorModuleFactoryABI, SafeABI } from '../config/abis'
 import { getAddresses } from '../config/addresses'
 import { buildModuleInstallTxs, DEFAULT_SALT } from '../lib/module'
@@ -9,8 +9,9 @@ import { getDelegations, type StoredDelegation } from '../lib/storage'
 import { Card, Btn, StatusBadge, Payee, type Status } from '../ui/components'
 import { IconChip, IconCheck, IconPlus, IconRepeat, IconLock, IconCube, IconExt, IconAlert, IconArrowR } from '../ui/icons'
 
-const chains: Record<number, typeof baseSepolia | typeof base> = {
+const chains: Record<number, typeof baseSepolia | typeof base | typeof sepolia> = {
   84532: baseSepolia,
+  11155111: sepolia,
   8453: base,
 }
 
@@ -43,11 +44,11 @@ function SubCard({ d, onOpen }: { d: StoredDelegation; onOpen: () => void }) {
         <span className="text-dim text-sm mb-0.5">{d.meta.tokenAddress ? 'USDC' : ''} / {d.meta.period ?? 'period'}</span>
       </div>
       <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
-        <div className="rounded-lg bg-raised/60 ring-1 ring-line px-3 py-2">
+        <div className="rounded-lg glass-soft ring-1 ring-line px-3 py-2">
           <div className="text-faint">Period</div>
           <div className="text-ink font-semibold mt-0.5">{d.meta.period ?? '—'}</div>
         </div>
-        <div className="rounded-lg bg-raised/60 ring-1 ring-line px-3 py-2">
+        <div className="rounded-lg glass-soft ring-1 ring-line px-3 py-2">
           <div className="text-faint flex items-center gap-1"><IconLock size={11} /> On-chain cap</div>
           <div className="text-ink font-semibold mt-0.5 font-mono tnum">{d.meta.amount ?? '—'}</div>
         </div>
@@ -144,14 +145,14 @@ export default function Home({ onNavigate }: { onNavigate: (page: Page) => void 
     <div className="rise">
       {/* Module status banner */}
       {moduleStatus === 'installed' ? (
-        <div className="flex items-center justify-between gap-4 rounded-2xl px-4 py-3 mb-6" style={{ background: 'rgba(52,211,153,.07)', boxShadow: 'inset 0 0 0 1px rgba(52,211,153,.22)' }}>
+        <div className="flex items-center justify-between gap-4 rounded-2xl px-4 py-3 mb-6 glass-soft" style={{ background: 'rgba(52,211,153,.07)', boxShadow: 'inset 0 0 0 1px rgba(52,211,153,.22)' }}>
           <div className="flex items-center gap-3 min-w-0">
             <div className="grid place-items-center w-9 h-9 rounded-xl shrink-0" style={{ background: 'rgba(52,211,153,.14)', color: '#34D399' }}>
               <IconChip size={18} />
             </div>
             <div className="min-w-0">
               <div className="text-sm font-semibold text-ink flex items-center gap-2">
-                SubscRight module enabled
+                OurGlass module enabled
                 <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-active"><IconCheck size={12} /> ready</span>
               </div>
               <div className="text-xs text-dim font-mono truncate">
@@ -165,7 +166,7 @@ export default function Home({ onNavigate }: { onNavigate: (page: Page) => void 
           <div className="flex items-start gap-3">
             <div className="grid place-items-center w-9 h-9 rounded-xl shrink-0 bg-raised text-danger ring-1 ring-line"><IconAlert size={18} /></div>
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold text-ink">SubscRight module not installed</div>
+              <div className="text-sm font-semibold text-ink">OurGlass module not installed</div>
               <p className="text-xs text-dim mt-1 leading-relaxed">Enable the DeleGator (ERC-7710) module on your Safe to start creating gasless subscriptions. One-time setup — all signers approve.</p>
               {moduleAddress && <p className="text-[11px] text-faint font-mono mt-2 truncate">module: {moduleAddress}</p>}
               <div className="mt-3">

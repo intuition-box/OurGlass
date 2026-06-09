@@ -13,7 +13,7 @@ export default function Landing() {
         <Logo size={40} />
         <h1 className="mt-6 text-2xl font-extrabold tracking-tight text-ink">Sign once. Charged every period.</h1>
         <p className="mt-2 text-sm text-dim leading-relaxed">
-          SubscRight is a Safe App. Open it inside your Safe to create and manage gasless subscriptions.
+          OurGlass is a Safe App. Open it inside your Safe to create and manage gasless subscriptions.
         </p>
         <a
           href="/redeem"

@@ -50,6 +50,12 @@ export const addresses: Record<number, ChainAddresses> = {
     delegatorModuleFactory: '0xE64ea779033131583cDE1c8862685051E09C4b78' as Address, // deployed on Base Sepolia
     ...SHARED_ENFORCERS,
   },
+  // Ethereum Sepolia (11155111) — Delegation Framework + module factory deployed at the same deterministic addresses
+  11155111: {
+    delegationManager: DELEGATION_MANAGER,
+    delegatorModuleFactory: '0xE64ea779033131583cDE1c8862685051E09C4b78' as Address,
+    ...SHARED_ENFORCERS,
+  },
   // Base Mainnet (8453)
   8453: {
     delegationManager: DELEGATION_MANAGER,

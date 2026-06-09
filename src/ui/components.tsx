@@ -1,4 +1,4 @@
-// SubscRight design-system primitives. Ported from the design handoff.
+// OurGlass design-system primitives. Ported from the design handoff.
 import { useState, type ButtonHTMLAttributes, type ReactNode } from 'react'
 import { IconBolt, IconCheck, IconCopy } from './icons'
 
@@ -17,14 +17,27 @@ export const Logo = ({ size = 26 }: { size?: number }) => (
       className="relative grid place-items-center rounded-lg"
       style={{ width: size + 8, height: size + 8, background: 'linear-gradient(150deg,#1A2236,#0E1320)', boxShadow: 'inset 0 0 0 1px #2E3A55' }}
     >
+      {/* hourglass whose sand is ERC20 tokens streaming through the neck */}
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-        <path d="M12 3 5 6v5c0 4.4 3 7.4 7 9 4-1.6 7-4.6 7-9V6l-7-3Z" stroke="#3B82F6" strokeWidth="1.6" strokeLinejoin="round" />
-        <path d="M11 2 7 12h3.2L9.4 19 16 9.6h-3.4L13.6 4 11 2Z" fill="var(--accent)" />
+        <path d="M6 4 L18 4 L13.2 12 L18 20 L6 20 L10.8 12 Z" stroke="#3B82F6" strokeWidth="1.6" strokeLinejoin="round" />
+        <line x1="5" y1="4" x2="19" y2="4" stroke="#3B82F6" strokeWidth="1.8" strokeLinecap="round" />
+        <line x1="5" y1="20" x2="19" y2="20" stroke="#3B82F6" strokeWidth="1.8" strokeLinecap="round" />
+        <g fill="var(--accent)">
+          <circle cx="10.2" cy="7" r="1.05" />
+          <circle cx="13.8" cy="7" r="1.05" />
+          <circle cx="12" cy="9" r="1.05" />
+          <circle className="og-token-drop" cx="12" cy="12.5" r="1.05" />
+          <circle cx="9.6" cy="18.4" r="1.05" />
+          <circle cx="12" cy="18.4" r="1.05" />
+          <circle cx="14.4" cy="18.4" r="1.05" />
+          <circle cx="10.8" cy="16.6" r="1.05" />
+          <circle cx="13.2" cy="16.6" r="1.05" />
+        </g>
       </svg>
     </div>
     <div className="leading-none">
       <div className="font-extrabold tracking-tight text-ink" style={{ fontSize: size * 0.7 }}>
-        Subsc<span style={{ color: 'var(--accent)' }}>Right</span>
+        Our<span style={{ color: 'var(--accent)' }}>Glass</span>
       </div>
     </div>
   </div>
@@ -130,7 +143,7 @@ export function GaslessButton({
 }
 
 export const Card = ({ className = '', hover = false, children, ...p }: { className?: string; hover?: boolean; children: ReactNode } & React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={`rounded-2xl bg-panel ring-1 ring-line shadow-card ${hover ? 'transition-all duration-200 hover:ring-line2 hover:-translate-y-0.5' : ''} ${className}`} {...p}>
+  <div className={`rounded-2xl glass ring-1 ring-line shadow-card ${hover ? 'transition-all duration-200 hover:ring-line2 hover:-translate-y-0.5' : ''} ${className}`} {...p}>
     {children}
   </div>
 )
@@ -148,7 +161,7 @@ export function CopyChip({ value, label, className = '' }: { value: string; labe
         setDone(true)
         setTimeout(() => setDone(false), 1100)
       }}
-      className={`group inline-flex items-center gap-2 rounded-lg bg-raised ring-1 ring-line px-2.5 py-1.5 font-mono text-xs text-dim hover:text-ink hover:ring-line2 transition ${className}`}
+      className={`group inline-flex items-center gap-2 rounded-lg glass-soft ring-1 ring-line px-2.5 py-1.5 font-mono text-xs text-dim hover:text-ink hover:ring-line2 transition ${className}`}
     >
       <span className="truncate">{label || value}</span>
       {done ? <IconCheck size={14} style={{ color: '#34D399' }} /> : <IconCopy size={14} className="opacity-50 group-hover:opacity-100" />}

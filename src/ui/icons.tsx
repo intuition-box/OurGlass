@@ -1,4 +1,4 @@
-// SubscRight icon set — lightweight stroke icons. Ported from the design system.
+// OurGlass icon set — lightweight stroke icons. Ported from the design system.
 import type { SVGProps } from 'react'
 
 type IcProps = { d: string | string[]; size?: number; sw?: number } & Omit<SVGProps<SVGSVGElement>, 'd'>

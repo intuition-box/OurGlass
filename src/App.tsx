@@ -25,7 +25,7 @@ function AppInner() {
     <div className="min-h-screen">
       <div className="max-w-[1180px] mx-auto px-5 py-6 grid grid-cols-[220px_1fr] gap-6">
         {/* Sidebar */}
-        <aside className="flex flex-col gap-5">
+        <aside className="flex flex-col gap-5 glass-strong rounded-2xl ring-1 ring-line p-4">
           <Logo />
           <nav className="flex flex-col gap-1">
             {NAV.map(({ key, label, icon: Icon }) => {
@@ -35,7 +35,7 @@ function AppInner() {
                   key={key}
                   onClick={() => setPage(key)}
                   className={`group flex items-center gap-3 rounded-xl px-3 h-10 text-sm font-medium transition-colors ${
-                    active ? 'bg-raised text-ink ring-1 ring-line2' : 'text-dim hover:text-ink hover:bg-raised'
+                    active ? 'glass-soft text-ink ring-1 ring-line2' : 'text-dim hover:text-ink hover:bg-raised'
                   }`}
                 >
                   <span style={{ color: active ? 'var(--accent)' : undefined }}>
@@ -47,7 +47,7 @@ function AppInner() {
             })}
           </nav>
 
-          <div className="mt-auto rounded-2xl p-4 ring-1 ring-line" style={{ background: 'linear-gradient(160deg,rgba(34,211,238,.06),transparent)' }}>
+          <div className="mt-auto rounded-2xl p-4 ring-1 ring-line glass-soft" style={{ background: 'linear-gradient(160deg,rgba(34,211,238,.12),rgba(19,26,42,.35))' }}>
             <div className="flex items-center gap-2 text-xs font-semibold text-ink">
               <IconBolt size={14} style={{ color: 'var(--accent)' }} /> Sign once.
             </div>
