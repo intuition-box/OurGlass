@@ -152,12 +152,44 @@ export const Mono = ({ children, className = '' }: { children: ReactNode; classN
   <span className={`font-mono ${className}`}>{children}</span>
 )
 
+// Robust copy that also works inside the Safe App iframe, where the async
+// Clipboard API is blocked by Permissions-Policy (no `clipboard-write`).
+// Falls back to a hidden textarea + execCommand, which is allowed on a gesture.
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch { /* blocked in iframe — fall through */ }
+  try {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.setAttribute('readonly', '')
+    ta.style.position = 'fixed'
+    ta.style.top = '-9999px'
+    document.body.appendChild(ta)
+    ta.select()
+    ta.setSelectionRange(0, text.length)
+    const ok = document.execCommand('copy')
+    document.body.removeChild(ta)
+    return ok
+  } catch {
+    return false
+  }
+}
+
 export function CopyChip({ value, label, className = '' }: { value: string; label?: string; className?: string }) {
   const [done, setDone] = useState(false)
   return (
     <button
-      onClick={() => {
-        navigator.clipboard?.writeText(value).catch(() => {})
+      onClick={async () => {
+        const ok = await copyToClipboard(value)
+        if (!ok) {
+          // Last resort: let the user copy it manually.
+          window.prompt('Copy this:', value)
+          return
+        }
         setDone(true)
         setTimeout(() => setDone(false), 1100)
       }}

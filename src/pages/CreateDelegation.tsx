@@ -30,7 +30,7 @@ const USDC_BY_CHAIN: Record<number, Address> = {
   11155111: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
   8453: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
 }
-const PERIODS: PeriodType[] = ['daily', 'weekly', 'monthly']
+const PERIODS: PeriodType[] = ['minutely', 'daily', 'weekly', 'monthly']
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
 
 type SignStep = 'idle' | 'building' | 'pinning' | 'signing'

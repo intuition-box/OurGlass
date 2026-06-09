@@ -1,7 +1,9 @@
-export type PeriodType = 'hourly' | 'daily' | 'weekly' | 'monthly'
+export type PeriodType = 'minutely' | 'hourly' | 'daily' | 'weekly' | 'monthly'
 
 export function periodToSeconds(period: PeriodType): bigint {
   switch (period) {
+    case 'minutely':
+      return 60n
     case 'hourly':
       return 3600n
     case 'daily':
@@ -15,6 +17,8 @@ export function periodToSeconds(period: PeriodType): bigint {
 
 export function periodLabel(period: PeriodType): string {
   switch (period) {
+    case 'minutely':
+      return 'per minute'
     case 'hourly':
       return 'per hour'
     case 'daily':
