@@ -7,13 +7,12 @@ import ImportDelegation from './pages/ImportDelegation'
 import Charge from './pages/Charge'
 import ModuleTransfer from './pages/ModuleTransfer'
 import { Logo } from './ui/components'
-import { IconGrid, IconReceipt, IconPlus, IconBolt, IconWallet, IconLink } from './ui/icons'
+import { IconGrid, IconPlus, IconBolt, IconWallet, IconLink } from './ui/icons'
 
 type Page = 'home' | 'create' | 'delegations' | 'import' | 'redeem' | 'withdraw'
 
 const NAV: { key: Page; label: string; icon: ComponentType<{ size?: number }> }[] = [
   { key: 'home', label: 'Overview', icon: IconGrid },
-  { key: 'delegations', label: 'Subscriptions', icon: IconReceipt },
   { key: 'create', label: 'New subscription', icon: IconPlus },
   { key: 'redeem', label: 'Charge', icon: IconBolt },
   { key: 'withdraw', label: 'Withdraw', icon: IconWallet },

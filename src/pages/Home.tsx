@@ -195,17 +195,12 @@ export default function Home({ onNavigate }: { onNavigate: (page: Page) => void 
         <Btn kind="primary" icon={<IconPlus size={18} />} onClick={() => onNavigate('create')}>New subscription</Btn>
       </div>
 
-      {/* Stats (no ETH-spent stat by design choice) */}
-      <div className="grid grid-cols-2 gap-4 mb-6">
+      {/* Stats (no ETH-spent / gasless stat by design choice) */}
+      <div className="mb-6">
         <Card className="p-4">
           <div className="flex items-center gap-2 text-xs text-faint"><IconRepeat size={16} /> Committed / month</div>
           <div className="mt-2 font-mono font-bold text-ink tnum" style={{ fontSize: 24 }}>${committed.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
           <div className="text-xs text-dim mt-1">{active.length} active subscription{active.length === 1 ? '' : 's'}</div>
-        </Card>
-        <Card className="p-4">
-          <div className="flex items-center gap-2 text-xs text-faint" style={{ color: 'var(--accent)' }}><IconCube size={16} /> Gasless</div>
-          <div className="mt-2 font-mono font-bold tnum" style={{ fontSize: 24, color: 'var(--accent)' }}>0 ETH</div>
-          <div className="text-xs text-dim mt-1">Charges paid in USDC by the relayer</div>
         </Card>
       </div>
 
