@@ -91,12 +91,14 @@ export function GaslessButton({
   onClick,
   disabled,
   intensity = 1,
+  className = '',
 }: {
   children?: ReactNode
   size?: 'md' | 'lg'
   onClick?: () => void
   disabled?: boolean
   intensity?: number
+  className?: string
 }) {
   const sz = size === 'lg' ? 'h-14 px-7 text-base' : 'h-12 px-5 text-[15px]'
   const loud = intensity >= 1.5
@@ -105,7 +107,7 @@ export function GaslessButton({
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`group relative inline-flex items-center justify-center gap-2.5 rounded-2xl font-bold text-base overflow-hidden transition-all duration-150 active:scale-[.985] disabled:opacity-40 disabled:pointer-events-none ${sz}`}
+      className={`group relative inline-flex items-center justify-center gap-2.5 rounded-2xl font-bold text-base overflow-hidden transition-all duration-150 active:scale-[.985] disabled:opacity-40 disabled:pointer-events-none ${sz} ${className}`}
       style={{
         background: subtle ? 'transparent' : 'linear-gradient(180deg, color-mix(in srgb, var(--accent) 92%, #fff) 0%, var(--accent) 100%)',
         color: subtle ? 'var(--accent)' : '#06121A',

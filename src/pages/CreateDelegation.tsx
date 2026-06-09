@@ -19,8 +19,8 @@ import {
 import { periodToSeconds, periodLabel, type PeriodType } from '../lib/enforcers'
 import { getEnvironment } from '../lib/environment'
 import { saveDelegation, type StoredDelegation } from '../lib/storage'
-import { Card, Btn, USDC, Mono, CopyChip, Payee, StatusBadge } from '../ui/components'
-import { IconCube, IconLock, IconCheck, IconExt, IconArrowR, IconHash, IconCal } from '../ui/icons'
+import { Card, Btn, GaslessButton, USDC, Mono, CopyChip, Payee, StatusBadge } from '../ui/components'
+import { IconCube, IconLock, IconCheck, IconExt, IconHash, IconCal } from '../ui/icons'
 
 const chains: Record<number, typeof baseSepolia | typeof base> = { 84532: baseSepolia, 8453: base }
 
@@ -31,6 +31,35 @@ const USDC_BY_CHAIN: Record<number, Address> = {
 }
 const PERIODS: PeriodType[] = ['daily', 'weekly', 'monthly']
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
+
+type SignStep = 'idle' | 'building' | 'pinning' | 'signing'
+
+function StepRow({ done, active, label, sub }: { done?: boolean; active?: boolean; label: string; sub?: string }) {
+  return (
+    <div className="flex items-center gap-3">
+      <div
+        className="grid place-items-center w-6 h-6 rounded-full shrink-0 transition"
+        style={{
+          background: done ? 'rgba(52,211,153,.16)' : active ? 'var(--accent-soft)' : '#1A2236',
+          color: done ? '#34D399' : active ? 'var(--accent)' : '#646E86',
+          boxShadow: active ? '0 0 0 1px var(--accent-line)' : 'none',
+        }}
+      >
+        {done ? (
+          <IconCheck size={14} />
+        ) : active ? (
+          <span className="w-2.5 h-2.5 rounded-full border-2 border-current border-t-transparent animate-spin" />
+        ) : (
+          <span className="w-1.5 h-1.5 rounded-full bg-current" />
+        )}
+      </div>
+      <div className="min-w-0">
+        <div className={`text-sm font-medium ${done || active ? 'text-ink' : 'text-faint'}`}>{label}</div>
+        {sub && <div className="text-[11px] font-mono text-faint truncate">{sub}</div>}
+      </div>
+    </div>
+  )
+}
 
 export default function CreateDelegation() {
   const { sdk, safe } = useSafeAppsSDK()
@@ -46,6 +75,8 @@ export default function CreateDelegation() {
   const [expiryDate, setExpiryDate] = useState('')
 
   const [signing, setSigning] = useState(false)
+  const [step, setStep] = useState<SignStep>('idle')
+  const [pinnedCid, setPinnedCid] = useState<string | null>(null)
   const [signed, setSigned] = useState<StoredDelegation | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -81,6 +112,8 @@ export default function CreateDelegation() {
 
   async function handleSign() {
     setSigning(true)
+    setStep('building')
+    setPinnedCid(null)
     setError(null)
     try {
       const chain = chains[safe.chainId]
@@ -114,8 +147,10 @@ export default function CreateDelegation() {
         chainId: safe.chainId,
         terms,
       })
+      setStep('pinning')
       const jwt = import.meta.env.VITE_PINATA_JWT
       const pin: PinResult = jwt ? await pinAgreement(agreement, jwt) : offlinePin(agreement)
+      setPinnedCid(pin.cid)
       const salt = agreement.termsHash
 
       const additionalCaveats = expiryTs
@@ -146,6 +181,7 @@ export default function CreateDelegation() {
         signature: '0x',
       }
 
+      setStep('signing')
       const typedData = buildDelegationTypedData(delegation, safe.chainId)
       const result = (await sdk.txs.signTypedMessage(typedData as never)) as { signature?: Hex; safeTxHash?: Hex }
       const delegationHash = computeDelegationHash(delegation)
@@ -174,6 +210,7 @@ export default function CreateDelegation() {
       setError(err instanceof Error ? err.message : 'Failed to sign subscription')
     } finally {
       setSigning(false)
+      setStep('idle')
     }
   }
 
@@ -296,13 +333,6 @@ export default function CreateDelegation() {
             </label>
             {expiryEnabled && <input type="datetime-local" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} className="mt-2" />}
           </div>
-
-          <div className="pt-1">
-            <Btn kind="primary" size="lg" icon={<IconArrowR size={18} />} onClick={handleSign} disabled={!canSign} className="w-full">
-              {signing ? 'Requesting signature…' : 'Sign subscription'}
-            </Btn>
-            <p className="text-xs text-faint text-center mt-2">Requests an EIP-712 signature from your Safe. All required signers approve.</p>
-          </div>
         </Card>
       </div>
 
@@ -341,6 +371,33 @@ export default function CreateDelegation() {
           </div>
         ) : (
           <p className="mt-6 text-sm text-dim leading-relaxed">Fill in an amount and a valid token to preview the subscription contract that gets pinned to IPFS and bound to your signature.</p>
+        )}
+
+        {preview && (
+          <div className="mt-5 pt-4 border-t border-line space-y-3">
+            {step === 'idle' ? (
+              <>
+                <div className="flex items-center gap-2 text-xs text-dim">
+                  <IconCube size={14} style={{ color: 'var(--accent)' }} /> Pinned to IPFS, hash bound to your signature.
+                </div>
+                <GaslessButton size="lg" onClick={handleSign} disabled={!canSign} className="w-full">
+                  Pin & sign
+                </GaslessButton>
+                <p className="text-[11px] text-faint text-center">1 signature · 0 ETH · gas paid in USDC</p>
+              </>
+            ) : (
+              <div className="space-y-3 py-1">
+                <StepRow done={step === 'pinning' || step === 'signing'} active={step === 'building'} label="Building human-readable contract" />
+                <StepRow
+                  done={step === 'signing'}
+                  active={step === 'pinning'}
+                  label="Pinning to IPFS"
+                  sub={step === 'pinning' ? 'pinning…' : pinnedCid ? `CID ${short(pinnedCid)}` : undefined}
+                />
+                <StepRow active={step === 'signing'} label="Safe signature" sub={step === 'signing' ? 'waiting for signers…' : undefined} />
+              </div>
+            )}
+          </div>
         )}
       </Card>
     </div>

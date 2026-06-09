@@ -47,16 +47,16 @@ function AppInner() {
             })}
           </nav>
 
-          <div className="mt-auto rounded-2xl p-4 ring-1 ring-line bg-panel" style={{ boxShadow: 'var(--shadow-card)' }}>
-            <div className="text-sm font-semibold text-ink">Sign once. Charged every period.</div>
-            <div className="text-xs text-dim leading-relaxed mt-1">
-              <span style={{ color: 'var(--accent)' }}>Gasless</span> · capped on-chain · revocable any time.
+          <div className="mt-auto rounded-2xl p-4 ring-1 ring-line" style={{ background: 'linear-gradient(160deg,rgba(34,211,238,.06),transparent)' }}>
+            <div className="flex items-center gap-2 text-xs font-semibold text-ink">
+              <IconBolt size={14} style={{ color: 'var(--accent)' }} /> Sign once.
             </div>
+            <p className="text-[11px] text-dim leading-relaxed mt-1.5">Charged every period. Gasless. Capped on-chain. Revocable.</p>
           </div>
         </aside>
 
         {/* Content */}
-        <main className="app-scroll overflow-y-auto rise" style={{ maxHeight: 'calc(100vh - 96px)' }}>
+        <main className="app-scroll overflow-y-auto rise" style={{ maxHeight: 'calc(100vh - 48px)' }}>
           {page === 'home' && <Home onNavigate={setPage} />}
           {page === 'create' && <CreateDelegation />}
           {page === 'delegations' && <Delegations />}
