@@ -3,3 +3,4 @@ dist
 .env
 test/deployment.json
 .vercel
+bun.lock

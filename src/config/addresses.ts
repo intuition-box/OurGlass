@@ -47,7 +47,7 @@ export const addresses: Record<number, ChainAddresses> = {
   // Base Sepolia (84532)
   84532: {
     delegationManager: DELEGATION_MANAGER,
-    delegatorModuleFactory: '0x0000000000000000000000000000000000000000' as Address, // Deploy via test:setup
+    delegatorModuleFactory: '0xe64ea779033131583cdE1c8862685051E09C4b78' as Address, // deployed on Base Sepolia
     ...SHARED_ENFORCERS,
   },
   // Base Mainnet (8453)
