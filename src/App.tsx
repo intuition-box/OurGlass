@@ -1,5 +1,4 @@
 import { useState, type ComponentType } from 'react'
-import { useSafeAppsSDK } from '@safe-global/safe-apps-react-sdk'
 import Home from './pages/Home'
 import CreateDelegation from './pages/CreateDelegation'
 import Delegations from './pages/Delegations'
@@ -20,27 +19,10 @@ const NAV: { key: Page; label: string; icon: ComponentType<{ size?: number }> }[
 ]
 
 function AppInner() {
-  const { safe } = useSafeAppsSDK()
   const [page, setPage] = useState<Page>('home')
-  const short = `${safe.safeAddress.slice(0, 6)}…${safe.safeAddress.slice(-4)}`
 
   return (
     <div className="min-h-screen">
-      {/* Top context bar (Safe provides this in the real iframe) */}
-      <div className="sticky top-0 z-20" style={{ background: 'rgba(8,11,18,.6)', backdropFilter: 'blur(8px)' }}>
-        <div className="max-w-[1180px] mx-auto h-12 px-5 flex items-center justify-between border-b border-line">
-          <div className="text-xs text-faint font-medium">Safe / Apps / <span className="text-dim">SubscRight</span></div>
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-raised ring-1 ring-line px-2.5 py-1 text-xs text-dim">
-              <span className="w-1.5 h-1.5 rounded-full bg-active" /> Chain {safe.chainId}
-            </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-raised ring-1 ring-line px-2.5 py-1 text-xs font-mono text-dim">
-              {short}
-            </span>
-          </div>
-        </div>
-      </div>
-
       <div className="max-w-[1180px] mx-auto px-5 py-6 grid grid-cols-[220px_1fr] gap-6">
         {/* Sidebar */}
         <aside className="flex flex-col gap-5">
