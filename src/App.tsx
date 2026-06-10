@@ -25,7 +25,7 @@ function AppInner() {
       <div className="max-w-[1180px] mx-auto px-5 py-6 grid grid-cols-[220px_1fr] gap-6">
         {/* Sidebar */}
         <aside className="flex flex-col gap-5 glass-strong rounded-2xl ring-1 ring-line p-4">
-          <Logo />
+          <Logo size={30} />
           <nav className="flex flex-col gap-1">
             {NAV.map(({ key, label, icon: Icon }) => {
               const active = page === key
