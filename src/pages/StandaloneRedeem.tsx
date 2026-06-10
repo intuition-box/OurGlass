@@ -119,7 +119,7 @@ export default function StandaloneRedeem() {
     <div className="min-h-screen">
       <header className="sticky top-0 z-10 glass-strong">
         <div className="max-w-3xl mx-auto h-14 px-5 flex items-center justify-between border-b border-line">
-          <Logo />
+          <Logo size={30} />
           <div className="flex items-center gap-2">
             <span className="text-xs text-faint">Biller console</span>
             <select value={chainId} onChange={(e) => setChainId(Number(e.target.value))} className="h-9 text-sm" style={{ width: 'auto' }}>
