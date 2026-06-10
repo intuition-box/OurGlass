@@ -46,7 +46,7 @@ function AppInner() {
             })}
           </nav>
 
-          <div className="mt-auto rounded-2xl p-4 ring-1 ring-line glass-soft" style={{ background: 'linear-gradient(160deg,rgba(34,211,238,.12),rgba(19,26,42,.35))' }}>
+          <div className="mt-auto rounded-2xl p-4 ring-1 ring-line glass-soft" style={{ background: 'linear-gradient(160deg,rgba(88,230,184,.12),rgba(28,28,31,.5))' }}>
             <div className="flex items-center gap-2 text-xs font-semibold text-ink">
               <IconBolt size={14} style={{ color: 'var(--accent)' }} /> Sign once.
             </div>

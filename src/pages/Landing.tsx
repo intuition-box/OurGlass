@@ -1,30 +1,94 @@
-import { Logo } from '../ui/components'
-import { IconBolt, IconArrowR } from '../ui/icons'
+import { LogoMark } from '../ui/components'
+
+const REPO_URL = 'https://github.com/Wieedze/SubscRight'
 
 /**
  * Shown when the app is opened top-level (not inside a Safe iframe). The Safe
  * App itself needs the iframe to connect; here we offer the biller's standalone
  * charge console instead of spinning on "Connecting to Safe…" forever.
+ *
+ * Faithful port of the designer's `desing.html` hero: a live stream runs down
+ * the right edge, a light-streaks video fills the right half, both gated on
+ * prefers-reduced-motion.
  */
 export default function Landing() {
   return (
-    <div className="min-h-screen flex items-center justify-center px-6">
-      <div className="flex flex-col items-center text-center max-w-md">
-        <Logo size={40} />
-        <h1 className="mt-6 text-2xl font-extrabold tracking-tight text-ink">Sign once. Charged every period.</h1>
-        <p className="mt-2 text-sm text-dim leading-relaxed">
-          OurGlass is a Safe App. Open it inside your Safe to create and manage recurring subscriptions.
-        </p>
-        <a
-          href="/redeem"
-          className="group mt-7 inline-flex items-center gap-2 rounded-xl px-4 h-11 text-sm font-semibold transition"
-          style={{ background: 'var(--accent-soft)', color: 'var(--accent)', boxShadow: 'inset 0 0 0 1px var(--accent-line)' }}
-        >
-          <IconBolt size={16} /> Charge a subscription
-          <IconArrowR size={15} className="opacity-70 group-hover:translate-x-0.5 transition-transform" />
-        </a>
-        <p className="mt-3 text-xs text-faint">Biller console — charge a signed subscription directly on-chain.</p>
+    <section className="relative flex min-h-screen flex-col overflow-hidden px-6 pb-14 pt-10 sm:px-12">
+      {/* signature: a thin live stream down the right edge */}
+      <div className="stream-edge absolute right-0 top-0 z-20 h-full w-1" aria-hidden="true" />
+
+      {/* background video — right half, full height, faded into the base */}
+      <div className="pointer-events-none absolute inset-y-0 left-1/2 right-0 z-0 overflow-hidden" aria-hidden="true">
+        <video
+          className="hero-video h-full w-full object-cover"
+          src="/hero.mp4"
+          autoPlay
+          muted
+          loop
+          playsInline
+        />
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              'linear-gradient(90deg, var(--color-base) 0%, rgba(10,10,11,0) 45%), linear-gradient(180deg, var(--color-base) 0%, rgba(10,10,11,0) 18%), linear-gradient(0deg, var(--color-base) 0%, rgba(10,10,11,0) 22%)',
+          }}
+        />
       </div>
-    </div>
+
+      <nav className="relative z-10 flex items-center justify-between">
+        <LogoMark size={26} />
+        <div className="flex items-center gap-7">
+          <a
+            href="https://app.safe.global"
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-sm text-[15px] font-medium text-ink transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-line)] focus-visible:ring-offset-2 focus-visible:ring-offset-base"
+          >
+            Add to your Safe
+          </a>
+          <a
+            href={REPO_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex h-[42px] items-center rounded-full bg-[#f5f5f7] px-[22px] text-[15px] font-semibold text-[#111] transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-line)] focus-visible:ring-offset-2 focus-visible:ring-offset-base"
+          >
+            Github
+          </a>
+        </div>
+      </nav>
+
+      <div className="relative z-10 mt-16 max-w-[880px]">
+        <h1 className="text-[clamp(40px,5.2vw,64px)] font-semibold leading-[1.12] tracking-[-1.5px]">
+          Real-time streaming<br />payments for your<br />platform
+        </h1>
+
+        <div className="mt-10 flex items-center gap-[18px]">
+          <a
+            href="/redeem"
+            className="group inline-flex items-stretch gap-1 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-line)] focus-visible:ring-offset-2 focus-visible:ring-offset-base"
+          >
+            <span className="inline-flex h-12 items-center rounded-full bg-[#f5f5f7] px-7 text-base font-semibold text-[#111] transition-opacity group-hover:opacity-90">
+              Start streaming money
+            </span>
+            <span className="inline-flex h-12 w-12 items-center justify-center rounded-[14px] bg-[#f5f5f7] text-[#111] transition-[border-radius,opacity] duration-200 group-hover:rounded-full group-hover:opacity-90">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+                <path d="M4 12h16" />
+                <path d="M13 5l7 7-7 7" />
+              </svg>
+            </span>
+          </a>
+        </div>
+
+      </div>
+
+      <div className="relative z-10 mt-auto flex flex-col gap-3.5 pt-[120px]">
+        <p className="text-[17px] text-faint"><b className="mr-1.5 font-semibold text-ink">Sign once</b>the payee charges itself every period</p>
+        <p className="text-[17px] text-faint"><b className="mr-1.5 font-semibold text-ink">Capped on-chain</b>never above the agreed amount, never twice</p>
+        <p className="text-[17px] text-faint"><b className="mr-1.5 font-semibold text-ink">Non-custodial</b>funds stay in your Safe until the moment of charge</p>
+        <p className="text-[17px] text-faint"><b className="mr-1.5 font-semibold text-ink">Documented</b>human-readable agreements pinned to IPFS</p>
+        <p className="text-[17px] text-faint"><b className="mr-1.5 font-semibold text-ink">Revocable</b>cancel any agreement on-chain, at any time</p>
+      </div>
+    </section>
   )
 }
