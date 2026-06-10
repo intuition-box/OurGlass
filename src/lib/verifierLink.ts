@@ -8,13 +8,12 @@ import type { StoredDelegation } from './storage'
  * here: OurGlass never renders a "verified" result itself (a compromised front
  * could fake that). Override the base with VITE_VERIFIER_URL.
  */
-// Interim: the verifier's current IPFS CID (content-addressed, works today).
-// Switch this default to https://verify.ourglass.eth.limo/ once the ENS name is
-// registered — after that the URL is stable and re-pins don't change it.
-// Production reads VITE_VERIFIER_URL; update it on each re-pin until ENS exists.
+// Default = the verifier's current IPFS CID (content-addressed). The CID changes
+// on each re-pin of the verifier, so update this default — or set
+// VITE_VERIFIER_URL in production — whenever the verifier is rebuilt.
 const VERIFIER_URL: string =
   import.meta.env.VITE_VERIFIER_URL ??
-  'https://bafybeiaqtihw7t77vgx6s2q53uolr2v75ojvumhzae4dqa366ht2uyp2cm.ipfs.dweb.link/'
+  'https://bafybeigja45di5agun7qdwaz3dqiyrrtrqbdm4thwhfgc6nc4fwtjkjuqu.ipfs.dweb.link/'
 
 function toBase64Url(text: string): string {
   const bytes = new TextEncoder().encode(text)
