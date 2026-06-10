@@ -90,18 +90,6 @@ export function updateDelegationStatus(
   localStorage.setItem(STORAGE_KEY, JSON.stringify(updated))
 }
 
-export function exportDelegationsJson(delegations: StoredDelegation[]): string {
-  return JSON.stringify(
-    {
-      version: '1.0',
-      exportedAt: new Date().toISOString(),
-      delegations,
-    },
-    null,
-    2
-  )
-}
-
 export function importDelegationsJson(json: string): StoredDelegation[] {
   const parsed = JSON.parse(json)
   if (parsed.version && parsed.delegations) {

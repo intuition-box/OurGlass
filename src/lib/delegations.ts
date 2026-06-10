@@ -2,10 +2,6 @@ import { type Address, type Hex, keccak256, encodePacked, encodeAbiParameters } 
 import type { Caveat } from './storage'
 import { getAddresses } from '../config/addresses'
 
-// Root authority — used for direct delegations from the delegator
-export const ROOT_AUTHORITY: Hex =
-  '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
-
 export interface DelegationStruct {
   delegate: Address
   delegator: Address
@@ -13,15 +9,6 @@ export interface DelegationStruct {
   caveats: Caveat[]
   salt: Hex
   signature: Hex
-}
-
-/**
- * Generate a random salt for delegation uniqueness
- */
-export function generateSalt(): Hex {
-  const bytes = new Uint8Array(32)
-  crypto.getRandomValues(bytes)
-  return ('0x' + Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')) as Hex
 }
 
 /**

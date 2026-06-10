@@ -1,14 +1,13 @@
 import { useState, type ComponentType } from 'react'
 import Home from './pages/Home'
 import CreateDelegation from './pages/CreateDelegation'
-import Delegations from './pages/Delegations'
 import ImportDelegation from './pages/ImportDelegation'
 import Charge from './pages/Charge'
 import ModuleTransfer from './pages/ModuleTransfer'
 import { Logo } from './ui/components'
 import { IconGrid, IconPlus, IconBolt, IconWallet, IconLink } from './ui/icons'
 
-type Page = 'home' | 'create' | 'delegations' | 'import' | 'redeem' | 'withdraw'
+type Page = 'home' | 'create' | 'import' | 'redeem' | 'withdraw'
 
 const NAV: { key: Page; label: string; icon: ComponentType<{ size?: number }> }[] = [
   { key: 'home', label: 'Overview', icon: IconGrid },
@@ -47,7 +46,7 @@ function AppInner() {
             })}
           </nav>
 
-          <div className="mt-auto rounded-2xl p-4 ring-1 ring-line glass-soft" style={{ background: 'linear-gradient(160deg,rgba(34,211,238,.12),rgba(19,26,42,.35))' }}>
+          <div className="mt-auto rounded-2xl p-4 ring-1 ring-line glass-soft" style={{ background: 'linear-gradient(160deg,rgba(88,230,184,.12),rgba(28,28,31,.5))' }}>
             <div className="flex items-center gap-2 text-xs font-semibold text-ink">
               <IconBolt size={14} style={{ color: 'var(--accent)' }} /> Sign once.
             </div>
@@ -59,7 +58,6 @@ function AppInner() {
         <main className="app-scroll overflow-y-auto rise" style={{ maxHeight: 'calc(100vh - 48px)' }}>
           {page === 'home' && <Home onNavigate={setPage} />}
           {page === 'create' && <CreateDelegation />}
-          {page === 'delegations' && <Delegations />}
           {page === 'import' && <ImportDelegation />}
           {page === 'redeem' && <Charge />}
           {page === 'withdraw' && <ModuleTransfer />}

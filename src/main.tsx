@@ -7,6 +7,7 @@ import { wagmiConfig } from './config/chains'
 import App from './App'
 import StandaloneRedeem from './pages/StandaloneRedeem'
 import Landing from './pages/Landing'
+import Verify from './pages/Verify'
 import { Logo } from './ui/components'
 import './index.css'
 
@@ -18,6 +19,7 @@ const Pitch = React.lazy(() => import('./pages/Pitch'))
 // The biller charge console lives on /redeem; everything else is the Safe App.
 const isStandalone = window.location.pathname === '/redeem'
 const isPitch = window.location.pathname === '/pitch'
+const isVerify = window.location.pathname === '/verify'
 // The Safe App only works inside the Safe iframe — top-level visitors get a landing.
 const inSafeIframe = window.self !== window.top
 
@@ -27,6 +29,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <React.Suspense fallback={<div className="min-h-screen bg-base" />}>
         <Pitch />
       </React.Suspense>
+    ) : isVerify ? (
+      <Verify />
     ) : isStandalone ? (
       <WagmiProvider config={wagmiConfig}>
         <QueryClientProvider client={queryClient}>

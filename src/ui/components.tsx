@@ -11,35 +11,31 @@ export const STATUS: Record<Status, { label: string; color: string; dot: string;
   revoked: { label: 'Revoked', color: '#FB7185', dot: '#FB7185', soft: 'rgba(251,113,133,.12)', line: 'rgba(251,113,133,.28)' },
 }
 
-export const Logo = ({ size = 26 }: { size?: number }) => (
+/** The Ripl mark — a fan of strokes that fades grey → white, the streaming-payments signature. */
+export const LogoMark = ({ size = 26 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 100 100" fill="none" aria-hidden="true" className="block shrink-0">
+    <g strokeLinecap="round" strokeWidth="9" fill="none">
+      <line x1="50" y1="-8" x2="50" y2="108" stroke="#7a7a7a" transform="rotate(45 50 48)" />
+      <line x1="50" y1="-8" x2="50" y2="108" stroke="#909090" transform="rotate(30 50 48)" />
+      <line x1="50" y1="-8" x2="50" y2="108" stroke="#a6a6a6" transform="rotate(15 50 48)" />
+      <line x1="50" y1="-8" x2="50" y2="108" stroke="#bcbcbc" transform="rotate(0 50 48)" />
+      <line x1="50" y1="-8" x2="50" y2="108" stroke="#d2d2d2" transform="rotate(-15 50 48)" />
+      <line x1="50" y1="-8" x2="50" y2="108" stroke="#e8e8e8" transform="rotate(-30 50 48)" />
+      <line x1="50" y1="-8" x2="50" y2="108" stroke="#ffffff" transform="rotate(-45 50 48)" />
+    </g>
+  </svg>
+)
+
+export const Logo = ({ size = 26, withWordmark = true }: { size?: number; withWordmark?: boolean }) => (
   <div className="flex items-center gap-2.5 select-none">
-    <div
-      className="relative grid place-items-center rounded-lg"
-      style={{ width: size + 8, height: size + 8, background: 'linear-gradient(150deg,#1A2236,#0E1320)', boxShadow: 'inset 0 0 0 1px #2E3A55' }}
-    >
-      {/* hourglass whose sand is ERC20 tokens streaming through the neck */}
-      <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-        <path d="M6 4 L18 4 L13.2 12 L18 20 L6 20 L10.8 12 Z" stroke="#3B82F6" strokeWidth="1.6" strokeLinejoin="round" />
-        <line x1="5" y1="4" x2="19" y2="4" stroke="#3B82F6" strokeWidth="1.8" strokeLinecap="round" />
-        <line x1="5" y1="20" x2="19" y2="20" stroke="#3B82F6" strokeWidth="1.8" strokeLinecap="round" />
-        <g fill="var(--accent)">
-          <circle cx="10.2" cy="7" r="1.05" />
-          <circle cx="13.8" cy="7" r="1.05" />
-          <circle cx="12" cy="9" r="1.05" />
-          <circle className="og-token-drop" cx="12" cy="12.5" r="1.05" />
-          <circle cx="9.6" cy="18.4" r="1.05" />
-          <circle cx="12" cy="18.4" r="1.05" />
-          <circle cx="14.4" cy="18.4" r="1.05" />
-          <circle cx="10.8" cy="16.6" r="1.05" />
-          <circle cx="13.2" cy="16.6" r="1.05" />
-        </g>
-      </svg>
-    </div>
-    <div className="leading-none">
-      <div className="font-extrabold tracking-tight text-ink" style={{ fontSize: size * 0.7 }}>
-        Our<span className="text-glow" style={{ color: 'var(--accent)' }}>Glass</span>
+    <LogoMark size={size} />
+    {withWordmark && (
+      <div className="leading-none">
+        <div className="font-bold tracking-tight text-ink" style={{ fontSize: size * 0.7 }}>
+          Our<span style={{ color: 'var(--accent)' }}>Glass</span>
+        </div>
       </div>
-    </div>
+    )}
   </div>
 )
 
@@ -81,11 +77,11 @@ type BtnProps = {
 } & ButtonHTMLAttributes<HTMLButtonElement>
 
 export function Btn({ kind = 'secondary', size = 'md', icon, children, className = '', ...p }: BtnProps) {
-  const sz = size === 'lg' ? 'h-12 px-5 text-[15px]' : size === 'sm' ? 'h-9 px-3 text-[13px]' : 'h-11 px-4 text-sm'
-  const base = `inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition-all duration-150 active:scale-[.98] disabled:opacity-40 disabled:pointer-events-none ${sz} ${className}`
+  const sz = size === 'lg' ? 'h-12 px-6 text-[15px]' : size === 'sm' ? 'h-9 px-4 text-[13px]' : 'h-11 px-5 text-sm'
+  const base = `inline-flex items-center justify-center gap-2 rounded-full font-semibold transition-all duration-150 active:scale-[.98] disabled:opacity-40 disabled:pointer-events-none ${sz} ${className}`
   const styles: Record<string, string> = {
-    primary: 'text-white bg-primary hover:bg-primaryd shadow-[0_8px_24px_-10px_rgba(59,130,246,.8)]',
-    secondary: 'text-ink bg-raised hover:bg-[#212B43] ring-1 ring-line2',
+    primary: 'text-[#0a0a0b] bg-[#f5f5f7] hover:bg-white',
+    secondary: 'text-ink bg-raised hover:bg-[#232327] ring-1 ring-line2',
     ghost: 'text-dim hover:text-ink hover:bg-raised',
     danger: 'text-danger bg-[rgba(251,113,133,.10)] hover:bg-[rgba(251,113,133,.18)] ring-1 ring-[rgba(251,113,133,.30)]',
   }
@@ -120,7 +116,7 @@ export function GaslessButton({
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`group relative inline-flex items-center justify-center gap-2.5 rounded-2xl font-bold text-base overflow-hidden transition-all duration-150 active:scale-[.985] disabled:opacity-40 disabled:pointer-events-none ${sz} ${className}`}
+      className={`group relative inline-flex items-center justify-center gap-2.5 rounded-full font-bold text-base overflow-hidden transition-all duration-150 active:scale-[.985] disabled:opacity-40 disabled:pointer-events-none ${sz} ${className}`}
       style={{
         background: subtle ? 'transparent' : 'linear-gradient(180deg, color-mix(in srgb, var(--accent) 92%, #fff) 0%, var(--accent) 100%)',
         color: subtle ? 'var(--accent)' : '#06121A',
