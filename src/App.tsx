@@ -1,14 +1,13 @@
 import { useState, type ComponentType } from 'react'
 import Home from './pages/Home'
 import CreateDelegation from './pages/CreateDelegation'
-import Delegations from './pages/Delegations'
 import ImportDelegation from './pages/ImportDelegation'
 import Charge from './pages/Charge'
 import ModuleTransfer from './pages/ModuleTransfer'
 import { Logo } from './ui/components'
 import { IconGrid, IconPlus, IconBolt, IconWallet, IconLink } from './ui/icons'
 
-type Page = 'home' | 'create' | 'delegations' | 'import' | 'redeem' | 'withdraw'
+type Page = 'home' | 'create' | 'import' | 'redeem' | 'withdraw'
 
 const NAV: { key: Page; label: string; icon: ComponentType<{ size?: number }> }[] = [
   { key: 'home', label: 'Overview', icon: IconGrid },
@@ -59,7 +58,6 @@ function AppInner() {
         <main className="app-scroll overflow-y-auto rise" style={{ maxHeight: 'calc(100vh - 48px)' }}>
           {page === 'home' && <Home onNavigate={setPage} />}
           {page === 'create' && <CreateDelegation />}
-          {page === 'delegations' && <Delegations />}
           {page === 'import' && <ImportDelegation />}
           {page === 'redeem' && <Charge />}
           {page === 'withdraw' && <ModuleTransfer />}

@@ -6,6 +6,7 @@ import { DeleGatorModuleFactoryABI, SafeABI } from '../config/abis'
 import { getAddresses } from '../config/addresses'
 import { buildModuleInstallTxs, DEFAULT_SALT } from '../lib/module'
 import { getDelegations, type StoredDelegation } from '../lib/storage'
+import { SubscriptionDetail } from './SubscriptionDetail'
 import { Card, Btn, StatusBadge, Payee, type Status } from '../ui/components'
 import { IconChip, IconCheck, IconPlus, IconRepeat, IconLock, IconCube, IconExt, IconAlert, IconArrowR } from '../ui/icons'
 
@@ -15,7 +16,7 @@ const chains: Record<number, typeof baseSepolia | typeof base | typeof sepolia> 
   8453: base,
 }
 
-type Page = 'home' | 'create' | 'delegations' | 'import' | 'redeem' | 'withdraw'
+type Page = 'home' | 'create' | 'import' | 'redeem' | 'withdraw'
 
 function tintFor(addr: string): { tint: string; logo: string } {
   const palette = ['#3B82F6', '#22D3EE', '#8B5CF6', '#34D399', '#FB7185', '#FBBF24']
@@ -78,7 +79,14 @@ export default function Home({ onNavigate }: { onNavigate: (page: Page) => void 
   const [installing, setInstalling] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [safeInfo, setSafeInfo] = useState<{ owners: string[]; threshold: number } | null>(null)
-  const subs = getDelegations()
+  const [subs, setSubs] = useState<StoredDelegation[]>(() => getDelegations())
+  const [selected, setSelected] = useState<StoredDelegation | null>(null)
+
+  function refresh() {
+    const next = getDelegations()
+    setSubs(next)
+    setSelected((cur) => (cur ? next.find((x) => x.meta.delegationHash === cur.meta.delegationHash) ?? null : null))
+  }
 
   useEffect(() => {
     checkModuleStatus()
@@ -217,10 +225,12 @@ export default function Home({ onNavigate }: { onNavigate: (page: Page) => void 
       ) : (
         <div className="grid grid-cols-2 gap-4">
           {subs.map((d) => (
-            <SubCard key={d.meta.delegationHash} d={d} onOpen={() => onNavigate('delegations')} />
+            <SubCard key={d.meta.delegationHash} d={d} onOpen={() => setSelected(d)} />
           ))}
         </div>
       )}
+
+      {selected && <SubscriptionDetail d={selected} onClose={() => setSelected(null)} onChanged={refresh} />}
     </div>
   )
 }
