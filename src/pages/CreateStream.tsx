@@ -233,8 +233,8 @@ export default function CreateStream() {
 
           <div className="mt-5 rounded-xl bg-raised ring-1 ring-line divide-y divide-line">
             <Row label="Beneficiary"><Payee logo={((signed.meta.recipient ?? signed.delegation.delegate).slice(2, 4)).toUpperCase()} tint="#22D3EE" name={signed.meta.label} addr={short(signed.meta.recipient ?? signed.delegation.delegate)} size={32} /></Row>
-            <Row label="Rate"><span className="font-mono font-semibold text-ink">{signed.meta.ratePerPeriod} USDC / {signed.meta.ratePeriod}</span></Row>
-            <Row label="Total cap"><span className="font-mono text-ink">{maxAmount} USDC</span></Row>
+            <Row label="Pay rate"><span className="font-mono font-semibold text-ink">{signed.meta.ratePerPeriod} USDC / {signed.meta.ratePeriod}</span></Row>
+            <Row label="Total budget"><span className="font-mono text-ink">{maxAmount} USDC</span></Row>
             <Row label="Contract hash"><Mono className="text-xs text-dim">{short(signed.meta.agreement!.termsHash)}</Mono></Row>
           </div>
 
@@ -276,7 +276,7 @@ export default function CreateStream() {
           </Field>
 
           <div className="grid grid-cols-[1fr_120px] gap-4">
-            <Field label="Rate" hint="How fast the balance accrues.">
+            <Field label="Pay rate" hint="How fast the balance accrues.">
               <div className="relative">
                 <input type="number" placeholder="1000" value={rate} onChange={(e) => setRate(e.target.value)} min={0} step="any" className="pr-16" />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">{tokenSymbol}</span>
@@ -289,15 +289,15 @@ export default function CreateStream() {
             </Field>
           </div>
 
-          <Field label="Total cap" hint="The hard ceiling where the stream stops. Required, and must be ≥ the initial amount.">
+          <Field label="Total budget" hint="The most that will ever be paid out — the stream stops here. Required, and must be ≥ the upfront amount.">
             <div className="relative">
               <input type="number" placeholder="12000" value={maxAmount} onChange={(e) => setMaxAmount(e.target.value)} min={0} step="any" className="pr-16" />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">{tokenSymbol}</span>
             </div>
-            {capBelowInitial && <p className="text-xs text-danger mt-1">Total cap must be ≥ the initial amount.</p>}
+            {capBelowInitial && <p className="text-xs text-danger mt-1">Total budget must be ≥ the upfront amount.</p>}
           </Field>
 
-          <Field label="Initial amount" hint="Unlocked immediately at start (e.g. a signing advance). Optional — defaults to 0.">
+          <Field label="Upfront amount" hint="Paid immediately at start (e.g. a signing advance). Optional — defaults to 0.">
             <div className="relative">
               <input type="number" placeholder="0" value={initialAmount} onChange={(e) => setInitialAmount(e.target.value)} min={0} step="any" className="pr-16" />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">{tokenSymbol}</span>
@@ -357,7 +357,7 @@ export default function CreateStream() {
               <span className="font-mono text-ink">{preview.afterOnePeriod} {tokenSymbol}</span>
               <span className="text-faint text-[11px] block">claimable, accumulating</span>
             </PreviewRow>
-            <PreviewRow label="Total cap">
+            <PreviewRow label="Total budget">
               <span className="font-mono text-ink">{maxAmount} {tokenSymbol}</span>
               {preview.daysToCap > 0 && <span className="text-faint text-[11px] block">reached in ~{preview.daysToCap} d</span>}
             </PreviewRow>
