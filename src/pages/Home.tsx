@@ -32,6 +32,7 @@ const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
 
 function SubCard({ d, onOpen }: { d: StoredDelegation; onOpen: () => void }) {
   const status = statusOf(d.meta.status)
+  const stream = d.meta.scopeType === 'erc20Streaming'
   const payeeAddr = d.meta.recipient ?? d.delegation.delegate
   const { tint, logo } = tintFor(payeeAddr)
   const dim = status === 'revoked'
@@ -40,20 +41,23 @@ function SubCard({ d, onOpen }: { d: StoredDelegation; onOpen: () => void }) {
       <span className="absolute left-0 top-5 bottom-5 w-[3px] rounded-full" style={{ background: status === 'active' ? '#34D399' : status === 'pending' ? '#FBBF24' : '#FB7185' }} />
       <div className="flex items-start justify-between gap-3">
         <Payee logo={logo} tint={tint} name={d.meta.label} addr={short(payeeAddr)} />
-        <StatusBadge status={status} size="sm" />
+        <div className="flex items-center gap-2 shrink-0">
+          {stream && <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#22D3EE' }}><IconRepeat size={11} /> stream</span>}
+          <StatusBadge status={status} size="sm" />
+        </div>
       </div>
       <div className="mt-5 flex items-end gap-2">
-        <span className="font-mono font-bold text-ink tnum leading-none" style={{ fontSize: 30 }}>{d.meta.amount ?? '—'}</span>
-        <span className="text-dim text-sm mb-0.5">{d.meta.tokenAddress ? 'USDC' : ''} / {d.meta.period ?? 'period'}</span>
+        <span className="font-mono font-bold text-ink tnum leading-none" style={{ fontSize: 30 }}>{(stream ? d.meta.ratePerPeriod : d.meta.amount) ?? '—'}</span>
+        <span className="text-dim text-sm mb-0.5">{d.meta.tokenAddress ? 'USDC' : ''} / {(stream ? d.meta.ratePeriod : d.meta.period) ?? 'period'}</span>
       </div>
       <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
         <div className="rounded-lg glass-soft ring-1 ring-line px-3 py-2">
-          <div className="text-faint">Period</div>
-          <div className="text-ink font-semibold mt-0.5">{d.meta.period ?? '—'}</div>
+          <div className="text-faint">{stream ? 'Accrues' : 'Period'}</div>
+          <div className="text-ink font-semibold mt-0.5">{(stream ? d.meta.ratePeriod : d.meta.period) ?? '—'}</div>
         </div>
         <div className="rounded-lg glass-soft ring-1 ring-line px-3 py-2">
-          <div className="text-faint flex items-center gap-1"><IconLock size={11} /> On-chain cap</div>
-          <div className="text-ink font-semibold mt-0.5 font-mono tnum">{d.meta.amount ?? '—'}</div>
+          <div className="text-faint flex items-center gap-1">{stream ? <><IconRepeat size={11} /> Rate</> : <><IconLock size={11} /> On-chain cap</>}</div>
+          <div className="text-ink font-semibold mt-0.5 font-mono tnum">{(stream ? d.meta.ratePerPeriod : d.meta.amount) ?? '—'}</div>
         </div>
       </div>
       {d.meta.agreement && (
