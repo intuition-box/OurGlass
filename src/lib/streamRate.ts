@@ -20,13 +20,15 @@ export interface RateUnit {
 
 export type RateUnitKey = 'second' | 'minute' | 'hour' | 'day' | 'week' | 'month'
 
+// Ordered most-used-first so "month" — the default and the scale people actually
+// think in for payroll — sits at the top of the unit dropdown.
 export const RATE_UNITS: readonly RateUnit[] = [
-  { key: 'second', label: 'Second', seconds: 1 },
-  { key: 'minute', label: 'Minute', seconds: 60 },
-  { key: 'hour', label: 'Hour', seconds: 3600 },
-  { key: 'day', label: 'Day', seconds: 86400 },
-  { key: 'week', label: 'Week', seconds: 604800 },
   { key: 'month', label: 'Month', seconds: 2592000 },
+  { key: 'week', label: 'Week', seconds: 604800 },
+  { key: 'day', label: 'Day', seconds: 86400 },
+  { key: 'hour', label: 'Hour', seconds: 3600 },
+  { key: 'minute', label: 'Minute', seconds: 60 },
+  { key: 'second', label: 'Second', seconds: 1 },
 ]
 
 export function unitSeconds(key: RateUnitKey): number {
