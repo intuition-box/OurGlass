@@ -19,7 +19,7 @@ import {
   RATE_UNITS,
   MAX_UINT256,
   rateToPerSecond,
-  convertRate,
+  perSecondToRate,
   rateBreakdown,
   secondsToBudget,
   budgetByEndTime,
@@ -56,11 +56,7 @@ export default function CreateStream() {
 
   const [beneficiaryName, setBeneficiaryName] = useState('')
   const [recipient, setRecipient] = useState('')
-  // Canonical rate the user actually typed, with the unit it was typed in. The
-  // displayed value is always derived from this, so toggling the unit never
-  // compounds rounding (second↔month round-trips exactly).
-  const [typedRate, setTypedRate] = useState('')
-  const [typedUnit, setTypedUnit] = useState<RateUnitKey>('month')
+  const [rateInput, setRateInput] = useState('')
   const [rateUnit, setRateUnit] = useState<RateUnitKey>('month')
   const [boundMode, setBoundMode] = useState<BoundMode>('unbounded')
   const [budgetAmount, setBudgetAmount] = useState('')
@@ -81,22 +77,31 @@ export default function CreateStream() {
   const decimals = useCustomToken ? customDecimals : 6
   const tokenSymbol = useCustomToken ? 'tokens' : 'USDC'
 
-  // Same flow re-expressed at the current display unit, derived from the canonical.
-  const displayedRate = useMemo(() => {
-    if (!typedRate) return ''
-    if (typedUnit === rateUnit) return typedRate
-    return trimAmount(convertRate(typedRate, typedUnit, rateUnit))
-  }, [typedRate, typedUnit, rateUnit])
-
-  const rateValid = !!displayedRate && parseFloat(displayedRate) > 0
+  const rateValid = !!rateInput && parseFloat(rateInput) > 0
   const recipientValid = isAddress(recipient)
   const tokenValid = !!tokenAddress && isAddress(tokenAddress)
 
   // Per-second flow is the on-chain truth; the unit is only a display scale.
   const amountPerSecond = useMemo<bigint>(() => {
     if (!rateValid || !tokenValid) return 0n
-    try { return rateToPerSecond(displayedRate, rateUnit, decimals) } catch { return 0n }
-  }, [displayedRate, rateValid, tokenValid, rateUnit, decimals])
+    try { return rateToPerSecond(rateInput, rateUnit, decimals) } catch { return 0n }
+  }, [rateInput, rateValid, tokenValid, rateUnit, decimals])
+
+  // The exact encodable rate the caveat will stream at this unit (snapped value).
+  const effectiveRate = useMemo(
+    () => (amountPerSecond > 0n ? trimAmount(perSecondToRate(amountPerSecond, rateUnit, decimals)) : ''),
+    [amountPerSecond, rateUnit, decimals],
+  )
+
+  // Snap the field to the exact encodable value (on blur, and when the unit
+  // changes) so what's shown is always what the caveat actually streams.
+  function snapRate(toUnit: RateUnitKey) {
+    if (rateValid) {
+      const aps = rateToPerSecond(rateInput, rateUnit, decimals)
+      setRateInput(trimAmount(perSecondToRate(aps, toUnit, decimals)))
+    }
+    setRateUnit(toUnit)
+  }
 
   const initialRaw = useMemo<bigint>(() => {
     try { return parseUnits(initialAmount || '0', decimals) } catch { return 0n }
@@ -167,7 +172,7 @@ export default function CreateStream() {
 
       const environment = getEnvironment(safe.chainId)
       const now = Math.floor(Date.now() / 1000)
-      const aps = rateToPerSecond(displayedRate, rateUnit, decimals)
+      const aps = rateToPerSecond(rateInput, rateUnit, decimals)
       const maxRaw = resolveMaxRaw(now)
 
       // Pin the human-readable contract and bind the signature to it: salt = keccak256(terms).
@@ -175,7 +180,7 @@ export default function CreateStream() {
         organization: { name: beneficiaryName || 'Beneficiary', recipient: recipient as Address, delegate },
         subscriber: { label: 'Safe', account: safe.safeAddress as Address },
         token: { address: tokenAddress as Address, symbol: tokenSymbol, decimals },
-        ratePerPeriod: displayedRate,
+        ratePerPeriod: trimAmount(perSecondToRate(aps, rateUnit, decimals)),
         ratePeriodSeconds: unitSeconds(rateUnit),
         amountPerSecondRaw: aps.toString(),
         initialAmountRaw: initialRaw.toString(),
@@ -225,7 +230,7 @@ export default function CreateStream() {
       const stored: StoredDelegation = {
         delegation: { ...delegation, signature: (result?.signature || result?.safeTxHash || '0x') as Hex },
         meta: {
-          label: beneficiaryName || `${displayedRate} ${tokenSymbol}/${rateUnit} stream`,
+          label: beneficiaryName || `${trimAmount(perSecondToRate(aps, rateUnit, decimals))} ${tokenSymbol}/${rateUnit} stream`,
           scopeType: 'erc20Streaming',
           createdAt: new Date().toISOString(),
           chainId: safe.chainId,
@@ -240,7 +245,7 @@ export default function CreateStream() {
           initialAmount: initialRaw.toString(),
           maxAmount: maxRaw.toString(),
           startTime: now,
-          ratePerPeriod: displayedRate,
+          ratePerPeriod: trimAmount(perSecondToRate(aps, rateUnit, decimals)),
           ratePeriod: rateUnit,
         },
       }
@@ -258,8 +263,7 @@ export default function CreateStream() {
     setSigned(null)
     setBeneficiaryName('')
     setRecipient('')
-    setTypedRate('')
-    setTypedUnit('month')
+    setRateInput('')
     setRateUnit('month')
     setBoundMode('unbounded')
     setBudgetAmount('')
@@ -333,10 +337,10 @@ export default function CreateStream() {
           <Field label="Pay rate">
             <div className="grid grid-cols-[1fr_120px] gap-3">
               <div className="relative">
-                <input type="number" placeholder="1000" value={displayedRate} onChange={(e) => { setTypedRate(e.target.value); setTypedUnit(rateUnit) }} min={0} step="any" className="pr-16" />
+                <input type="number" placeholder="1000" value={rateInput} onChange={(e) => setRateInput(e.target.value)} onBlur={() => snapRate(rateUnit)} min={0} step="any" className="pr-16" />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">{tokenSymbol}</span>
               </div>
-              <select value={rateUnit} onChange={(e) => setRateUnit(e.target.value as RateUnitKey)}>
+              <select value={rateUnit} onChange={(e) => snapRate(e.target.value as RateUnitKey)}>
                 {RATE_UNITS.map((u) => <option key={u.key} value={u.key}>per {u.label.toLowerCase()}</option>)}
               </select>
             </div>
@@ -436,7 +440,7 @@ export default function CreateStream() {
             <div className="rounded-xl bg-raised ring-1 ring-line p-3">
               <div className="text-faint text-xs">Accrues</div>
               <div className="font-mono font-bold text-ink tnum mt-0.5" style={{ fontSize: 22 }}>
-                {displayedRate} <span className="text-dim text-sm font-semibold">{tokenSymbol} / {rateUnit}</span>
+                {effectiveRate} <span className="text-dim text-sm font-semibold">{tokenSymbol} / {rateUnit}</span>
               </div>
               <div className="text-faint text-[11px] mt-1 font-mono">≈ {preview.perSecond} {tokenSymbol}/s</div>
             </div>

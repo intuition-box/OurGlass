@@ -68,6 +68,16 @@ export function convertRate(amount: string, fromUnit: RateUnitKey, toUnit: RateU
   return formatRateNumber((n * unitSeconds(toUnit)) / unitSeconds(fromUnit))
 }
 
+/**
+ * The exact human rate an integer per-second flow represents at a unit scale —
+ * the "snapped" value to show so the UI never displays an amount the caveat can't
+ * actually stream (for USDC 300/month snaps to 300.672; for 18-decimal tokens the
+ * snap is invisible).
+ */
+export function perSecondToRate(amountPerSecondRaw: bigint, unit: RateUnitKey, decimals: number): string {
+  return formatUnits(amountPerSecondRaw * BigInt(unitSeconds(unit)), decimals)
+}
+
 /** The same per-second flow expressed at every scale, for a reactive breakdown line. */
 export function rateBreakdown(amountPerSecondRaw: bigint, decimals: number): Record<RateUnitKey, string> {
   const out = {} as Record<RateUnitKey, string>
