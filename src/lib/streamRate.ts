@@ -37,9 +37,17 @@ export function unitSeconds(key: RateUnitKey): number {
   return u.seconds
 }
 
-/** Per-second accrual (raw wei) from a human rate over a unit. Integer division — never over-pays. */
+/**
+ * Per-second accrual (raw wei) from a human rate over a unit. Rounds to the
+ * NEAREST wei/second rather than truncating: per-second amounts are tiny for
+ * low-decimal tokens (USDC has 6), so a floor would systematically short the
+ * stream by up to a few percent (e.g. 300 USDC/month → 298.08). Granularity is
+ * still one wei/second (≈ 2.6 USDC/month for 6-decimal tokens; negligible for 18).
+ */
 export function rateToPerSecond(amount: string, unit: RateUnitKey, decimals: number): bigint {
-  return parseUnits(amount, decimals) / BigInt(unitSeconds(unit))
+  const total = parseUnits(amount, decimals)
+  const secs = BigInt(unitSeconds(unit))
+  return (total + secs / 2n) / secs
 }
 
 /** Trim a number to a sane precision for a rate input field (drops trailing zeros). */
