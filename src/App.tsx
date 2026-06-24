@@ -36,16 +36,16 @@ function ChoiceCard({
 }) {
   return (
     <Card hover onClick={onSelect} className="p-6 cursor-pointer flex flex-col gap-4 h-full">
-      <div className="flex items-center justify-between">
-        <div className="grid place-items-center w-10 h-10 rounded-xl" style={{ background: `${tint}22`, color: tint }}>
-          <Icon size={20} />
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="grid place-items-center w-10 h-10 rounded-xl shrink-0" style={{ background: `${tint}22`, color: tint }}>
+            <Icon size={20} />
+          </div>
+          <h2 className="text-lg font-bold text-ink truncate">{title}</h2>
         </div>
-        <IconArrowR size={18} className="text-faint" />
+        <IconArrowR size={18} className="text-faint shrink-0" />
       </div>
-      <div>
-        <h2 className="text-lg font-bold text-ink">{title}</h2>
-        <p className="text-sm text-dim mt-1">{tagline}</p>
-      </div>
+      <p className="text-sm text-dim -mt-1">{tagline}</p>
       <div className="rounded-xl bg-raised ring-1 ring-line p-3 text-[13px] text-dim leading-relaxed">{example}</div>
       <div className="mt-auto flex items-center gap-1.5 text-[11px] font-medium text-faint uppercase tracking-wide">
         <IconLock size={12} /> {audience}
