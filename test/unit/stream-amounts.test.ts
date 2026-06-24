@@ -229,6 +229,55 @@ describe('minimum streamable rate, and the front-load rescue', () => {
   })
 })
 
+describe('4-year cycle base, and drift over 2 / 5 / 10 years', () => {
+  const CYCLE_4Y = 4 * YEAR // 126_230_400 s — one leap year per cycle, fixed
+
+  test('a 4-year cycle is a fixed second count regardless of start date', () => {
+    expect(CYCLE_4Y).toBe(126_230_400)
+  })
+
+  test('calendar months are NOT equal under a constant per-second rate (inherent)', () => {
+    const aps = rateToPerSecond('3000', 'month', DP6)
+    const month = (days: number) => aps * BigInt(days * 86_400)
+    expect(month(31)).toBeGreaterThan(month(30))
+    expect(month(28)).toBeLessThan(month(30))
+  })
+
+  // Zet's model: total defined over the fixed 4-year cycle, rate rounded UP.
+  test('unbounded drift grows linearly but stays under the 1 wei/s × time bound at 2/5/10y', () => {
+    const total4y = usdc('100000')
+    const aps = (total4y + BigInt(CYCLE_4Y) - 1n) / BigInt(CYCLE_4Y) // ceil — never shorts
+    for (const years of [2, 5, 10]) {
+      const elapsed = years * YEAR
+      const actual = available(aps, 0n, MAX_UINT256, 0, elapsed)
+      const ideal = (total4y * BigInt(elapsed)) / BigInt(CYCLE_4Y)
+      const drift = actual - ideal
+      expect(drift).toBeGreaterThanOrEqual(0n) // ceil never shorts the beneficiary
+      expect(drift).toBeLessThanOrEqual(BigInt(elapsed)) // < 1 wei/s accumulated
+    }
+  })
+
+  test('round-to-nearest drifts less than ceil (trade-off: it can briefly short)', () => {
+    const total4y = usdc('100000')
+    const apsCeil = (total4y + BigInt(CYCLE_4Y) - 1n) / BigInt(CYCLE_4Y)
+    const apsNear = (total4y + BigInt(CYCLE_4Y) / 2n) / BigInt(CYCLE_4Y)
+    const elapsed = 10 * YEAR
+    const ideal = (total4y * BigInt(elapsed)) / BigInt(CYCLE_4Y)
+    const driftCeil = abs(apsCeil * BigInt(elapsed) - ideal)
+    const driftNear = abs(apsNear * BigInt(elapsed) - ideal)
+    expect(driftNear).toBeLessThanOrEqual(driftCeil)
+  })
+
+  test('a CAPPED stream has ZERO total drift at 2/5/10y — the cap is the source of truth', () => {
+    const total4y = usdc('100000')
+    const aps = (total4y + BigInt(CYCLE_4Y) - 1n) / BigInt(CYCLE_4Y)
+    for (const years of [2, 5, 10]) {
+      const target = (total4y * BigInt(years * YEAR)) / BigInt(CYCLE_4Y) // pro-rata of the 4y total
+      expect(available(aps, 0n, target, 0, 50 * YEAR)).toBe(target) // exact, no drift, any horizon
+    }
+  })
+})
+
 describe('no drift over very large durations', () => {
   test('100-year stream accrues exactly aps × elapsed (capped), bit-for-bit', () => {
     const aps = rateToPerSecond('5000', 'month', DP6)
