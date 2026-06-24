@@ -6,7 +6,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { wagmiConfig } from './config/chains'
 import App from './App'
 import StandaloneRedeem from './pages/StandaloneRedeem'
-import Landing from './pages/Landing'
 import Verify from './pages/Verify'
 import { Logo } from './ui/components'
 import './index.css'
@@ -16,14 +15,21 @@ const queryClient = new QueryClient()
 // Workshop slide deck, lazy-loaded so it stays out of the app bundle.
 const Pitch = React.lazy(() => import('./pages/Pitch'))
 
-// The biller charge console lives on /redeem; everything else is the Safe App.
-const isStandalone = window.location.pathname === '/redeem'
-const isPitch = window.location.pathname === '/pitch'
-const isVerify = window.location.pathname === '/verify'
-// The Safe App only works inside the Safe iframe — top-level visitors get a landing.
+// The Safe App is served under /safe-app on the shared domain; utility pages keep
+// their own routes beneath it. Everything else is the in-Safe app shell.
+const isStandalone = window.location.pathname === '/safe-app/redeem'
+const isPitch = window.location.pathname === '/safe-app/pitch'
+const isVerify = window.location.pathname === '/safe-app/verify'
+// The Safe App only works inside the Safe iframe. A top-level visitor who reaches
+// the app shell (not a utility route, not framed by Safe) belongs on the website
+// landing, which now lives at the domain root.
 const inSafeIframe = window.self !== window.top
+const isUtilityRoute = isStandalone || isPitch || isVerify
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
+if (!isUtilityRoute && !inSafeIframe) {
+  window.location.replace('/')
+} else {
+  ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     {isPitch ? (
       <React.Suspense fallback={<div className="min-h-screen bg-base" />}>
@@ -37,8 +43,6 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           <StandaloneRedeem />
         </QueryClientProvider>
       </WagmiProvider>
-    ) : !inSafeIframe ? (
-      <Landing />
     ) : (
       <WagmiProvider config={wagmiConfig}>
         <QueryClientProvider client={queryClient}>
@@ -61,4 +65,5 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       </WagmiProvider>
     )}
   </React.StrictMode>,
-)
+  )
+}
