@@ -126,8 +126,10 @@ function AppInner() {
           </div>
         </aside>
 
-        {/* Content */}
-        <main className="app-scroll overflow-y-auto rise" style={{ maxHeight: 'calc(100vh - 48px)' }}>
+        {/* Content. px/pb give the cards' 1px ring (a box-shadow) room so it
+            isn't clipped by this scroll container — overflow-y:auto forces
+            overflow-x to clip too, which otherwise cuts the hairline border. */}
+        <main className="app-scroll overflow-y-auto rise px-1 pt-1 pb-3" style={{ maxHeight: 'calc(100vh - 48px)' }}>
           {page === 'home' && <Home onNavigate={navigate} />}
           {page === 'create' && createMode === 'choose' && <CreateChoice onPick={setCreateMode} />}
           {page === 'create' && createMode === 'subscription' && <CreateDelegation />}
