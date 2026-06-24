@@ -2,10 +2,9 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { useSafeAppsSDK } from '@safe-global/safe-apps-react-sdk'
 import { ipfsToHttp } from '../lib/subscriptionTerms'
 import { buildRevokeTxs } from '../lib/revoke'
-import { verifierUrlFor } from '../lib/verifierLink'
 import { updateDelegationStatus, removeDelegation, type StoredDelegation } from '../lib/storage'
 import { Card, Btn, StatusBadge, Payee, Mono, CopyChip, type Status } from '../ui/components'
-import { IconX, IconStop, IconCube, IconExt, IconLock, IconCal } from '../ui/icons'
+import { IconX, IconStop, IconCube, IconExt, IconLock, IconCal, IconRepeat } from '../ui/icons'
 
 const chainName = (id: number) =>
   id === 84532 ? 'Base Sepolia' : id === 11155111 ? 'Ethereum Sepolia' : id === 8453 ? 'Base' : `Chain ${id}`
@@ -42,6 +41,7 @@ export function SubscriptionDetail({
   const { sdk, safe } = useSafeAppsSDK()
   const [revoking, setRevoking] = useState(false)
   const status = statusOf(d.meta.status)
+  const stream = d.meta.scopeType === 'erc20Streaming'
   const payeeAddr = d.meta.recipient ?? d.delegation.delegate
   const httpUri =
     d.meta.agreement && !d.meta.agreement.uri.startsWith('ipfs://local-')
@@ -100,20 +100,29 @@ export function SubscriptionDetail({
 
         <div className="mt-5 flex items-end gap-2">
           <span className="font-mono font-bold text-ink tnum leading-none" style={{ fontSize: 30 }}>
-            {d.meta.amount ?? '—'}
+            {stream ? d.meta.ratePerPeriod ?? '—' : d.meta.amount ?? '—'}
           </span>
           <span className="text-dim text-sm mb-0.5">
-            {token(d)} / {d.meta.period ?? 'period'}
+            {token(d)} / {stream ? d.meta.ratePeriod ?? 'period' : d.meta.period ?? 'period'}
           </span>
         </div>
 
         <div className="mt-5 rounded-xl glass-soft ring-1 ring-line px-4">
-          <Row label="On-chain cap">
-            <span className="inline-flex items-center gap-1.5 text-sm text-ink font-mono">
-              <IconLock size={12} className="text-faint" />
-              {d.meta.amount ?? '—'} {token(d)} / {d.meta.period ?? 'period'}
-            </span>
-          </Row>
+          {stream ? (
+            <Row label="Accrues">
+              <span className="inline-flex items-center gap-1.5 text-sm text-ink font-mono">
+                <IconRepeat size={12} className="text-faint" />
+                {d.meta.ratePerPeriod ?? '—'} {token(d)} / {d.meta.ratePeriod ?? 'period'}
+              </span>
+            </Row>
+          ) : (
+            <Row label="On-chain cap">
+              <span className="inline-flex items-center gap-1.5 text-sm text-ink font-mono">
+                <IconLock size={12} className="text-faint" />
+                {d.meta.amount ?? '—'} {token(d)} / {d.meta.period ?? 'period'}
+              </span>
+            </Row>
+          )}
           <Row label="Chain">
             <span className="text-sm text-ink">{chainName(d.meta.chainId)}</span>
           </Row>
@@ -186,14 +195,6 @@ export function SubscriptionDetail({
         <div className="mt-5 flex items-center gap-2">
           <Mono className="text-[11px] text-faint mr-auto">{short(d.meta.delegationHash)}</Mono>
           <CopyChip value={JSON.stringify(d, null, 2)} label="Copy JSON" />
-          <Btn
-            kind="secondary"
-            size="sm"
-            icon={<IconExt size={14} />}
-            onClick={() => window.open(verifierUrlFor(d), '_blank', 'noopener,noreferrer')}
-          >
-            Verify externally
-          </Btn>
           {d.meta.status === 'signed' && (
             <Btn kind="danger" size="sm" icon={<IconStop size={14} />} onClick={handleRevoke} disabled={revoking}>
               {revoking ? 'Revoking…' : 'Revoke'}

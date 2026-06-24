@@ -1,11 +1,14 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useSafeAppsSDK } from '@safe-global/safe-apps-react-sdk'
-import { createPublicClient, http, isAddress, erc20Abi, type Address } from 'viem'
+import { createPublicClient, http, isAddress, erc20Abi, formatUnits, BaseError, type Address } from 'viem'
 import { baseSepolia, base, sepolia } from 'viem/chains'
 import { getDelegations, type StoredDelegation } from '../lib/storage'
+import { streamedAvailable } from '../lib/streamTerms'
 import { buildRedeemTx } from '../lib/redeemDirect'
 import { Card, Btn, StatusBadge, Payee, Mono, USDC } from '../ui/components'
-import { IconBolt, IconCheck, IconLock, IconArrowL } from '../ui/icons'
+import { IconBolt, IconCheck, IconLock, IconArrowL, IconRepeat } from '../ui/icons'
+
+const isStream = (d: StoredDelegation) => d.meta.scopeType === 'erc20Streaming'
 
 const chains: Record<number, typeof baseSepolia | typeof base | typeof sepolia> = { 84532: baseSepolia, 11155111: sepolia, 8453: base }
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
@@ -25,13 +28,14 @@ export default function Charge() {
   const [error, setError] = useState<string | null>(null)
   const [safeTxHash, setSafeTxHash] = useState<string | null>(null)
 
-  // This Safe can only redeem subscriptions where it is the delegate (payee).
+  // This Safe can only redeem delegations where it is the delegate (payee) —
+  // both per-period subscriptions and accumulating streams.
   const subs = useMemo(
     () =>
       getDelegations().filter(
         (d) =>
           d.delegation.delegate.toLowerCase() === safe.safeAddress.toLowerCase() &&
-          d.meta.scopeType === 'erc20SpendingLimit' &&
+          (d.meta.scopeType === 'erc20SpendingLimit' || d.meta.scopeType === 'erc20Streaming') &&
           d.meta.status === 'signed',
       ),
     [safe.safeAddress],
@@ -39,11 +43,44 @@ export default function Charge() {
 
   function pick(d: StoredDelegation) {
     setSelected(d)
-    setAmount(d.meta.amount ?? '')
+    // Subscriptions default to the period cap; streams default to the estimated
+    // accrued balance (filled by the effect below once decimals are known).
+    setAmount(isStream(d) ? '' : d.meta.amount ?? '')
     setRecipient(d.meta.recipient ?? '')
     setError(null)
     setSafeTxHash(null)
   }
+
+  // Estimate the claimable streamed balance for the selected stream. The estimate
+  // is UX only — the erc20Streaming caveat caps the actual claim on-chain.
+  useEffect(() => {
+    if (!selected || !isStream(selected)) return
+    const m = selected.meta
+    if (!m.tokenAddress || !m.amountPerSecond || !m.maxAmount || m.startTime == null) return
+    let cancelled = false
+    ;(async () => {
+      const chain = chains[safe.chainId]
+      if (!chain) return
+      const client = createPublicClient({ chain, transport: http() })
+      let decimals = 6
+      try {
+        decimals = await client.readContract({ address: m.tokenAddress as Address, abi: erc20Abi, functionName: 'decimals' })
+      } catch {
+        // default to USDC decimals
+      }
+      const available = streamedAvailable({
+        amountPerSecondRaw: m.amountPerSecond!,
+        initialAmountRaw: m.initialAmount ?? '0',
+        maxAmountRaw: m.maxAmount!,
+        startTime: m.startTime!,
+        nowSeconds: Math.floor(Date.now() / 1000),
+      })
+      if (!cancelled) setAmount(formatUnits(available, decimals))
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [selected, safe.chainId])
 
   async function handleCharge() {
     if (!selected) return
@@ -76,6 +113,16 @@ export default function Charge() {
         amount,
         recipient: recipient as Address,
       })
+      // Pre-flight: the Safe wraps any inner revert as opaque GS013. Simulate the
+      // redeem from the Safe (msg.sender == delegate) first to surface the real
+      // reason (caveat already charged this period, transfer-amount-exceeded,
+      // insufficient balance, delegate mismatch) before proposing a doomed tx.
+      try {
+        await client.call({ account: safe.safeAddress as Address, to: tx.to, data: tx.data })
+      } catch (sim) {
+        const reason = sim instanceof BaseError ? sim.shortMessage : sim instanceof Error ? sim.message : String(sim)
+        throw new Error(`Redeem would revert on-chain: ${reason}`)
+      }
       const res = await sdk.txs.send({ txs: [{ to: tx.to, value: tx.value, data: tx.data }] })
       setSafeTxHash(res.safeTxHash)
     } catch (err) {
@@ -121,10 +168,17 @@ export default function Charge() {
             <StatusBadge status="active" size="sm" />
           </div>
 
-          <div className="mt-5 rounded-xl bg-raised ring-1 ring-line p-4 flex items-center justify-between">
-            <span className="text-xs text-faint flex items-center gap-1.5"><IconLock size={13} /> Period cap</span>
-            <span className="font-mono font-bold text-ink">{selected.meta.amount} <span className="text-dim text-sm font-semibold">{selected.meta.tokenAddress ? 'USDC' : ''} / {selected.meta.period}</span></span>
-          </div>
+          {isStream(selected) ? (
+            <div className="mt-5 rounded-xl bg-raised ring-1 ring-line p-4 flex items-center justify-between">
+              <span className="text-xs text-faint flex items-center gap-1.5"><IconRepeat size={13} /> Accrues</span>
+              <span className="font-mono font-bold text-ink">{selected.meta.ratePerPeriod} <span className="text-dim text-sm font-semibold">USDC / {selected.meta.ratePeriod}</span></span>
+            </div>
+          ) : (
+            <div className="mt-5 rounded-xl bg-raised ring-1 ring-line p-4 flex items-center justify-between">
+              <span className="text-xs text-faint flex items-center gap-1.5"><IconLock size={13} /> Period cap</span>
+              <span className="font-mono font-bold text-ink">{selected.meta.amount} <span className="text-dim text-sm font-semibold">{selected.meta.tokenAddress ? 'USDC' : ''} / {selected.meta.period}</span></span>
+            </div>
+          )}
 
           {error && (
             <div className="mt-4 rounded-xl px-3 py-2 text-sm text-danger" style={{ background: 'rgba(251,113,133,.10)', boxShadow: 'inset 0 0 0 1px rgba(251,113,133,.30)' }}>{error}</div>
@@ -137,18 +191,22 @@ export default function Charge() {
               {recipient && !isAddress(recipient) && <p className="text-xs text-danger mt-1">Invalid address</p>}
             </div>
             <div>
-              <label className="text-sm font-medium text-ink block mb-1.5">Amount</label>
+              <label className="text-sm font-medium text-ink block mb-1.5">{isStream(selected) ? 'Claim amount' : 'Amount'}</label>
               <div className="relative">
                 <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} min={0} step="any" className="pr-16" />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">{selected.meta.tokenAddress ? 'USDC' : ''}</span>
               </div>
-              <p className="text-xs text-faint mt-1">Defaults to the period cap. Capped on-chain by the caveat; the Safe pays gas in ETH.</p>
+              <p className="text-xs text-faint mt-1">
+                {isStream(selected)
+                  ? 'Estimated accrued balance. The exact claimable amount is enforced on-chain by the stream caveat; the Safe pays gas in ETH.'
+                  : 'Defaults to the period cap. Capped on-chain by the caveat; the Safe pays gas in ETH.'}
+              </p>
             </div>
           </div>
 
           <div className="mt-6 flex justify-center">
             <Btn onClick={handleCharge} disabled={charging}>
-              {charging ? 'Submitting…' : 'Charge on-chain'}
+              {charging ? 'Submitting…' : isStream(selected) ? 'Claim on-chain' : 'Charge on-chain'}
             </Btn>
           </div>
         </Card>
@@ -181,10 +239,14 @@ export default function Charge() {
                 <Payee logo={payeeAddr.slice(2, 4).toUpperCase()} tint={tintFor(payeeAddr)} name={d.meta.label} addr={short(payeeAddr)} />
                 <div className="flex items-center gap-4 shrink-0">
                   <div className="text-right">
-                    <div className="font-mono font-bold text-ink tnum leading-none">{d.meta.amount} <span className="text-dim text-xs font-semibold">{d.meta.tokenAddress ? 'USDC' : ''}</span></div>
-                    <div className="text-[11px] text-faint mt-1">/ {d.meta.period}</div>
+                    <div className="font-mono font-bold text-ink tnum leading-none">{isStream(d) ? d.meta.ratePerPeriod : d.meta.amount} <span className="text-dim text-xs font-semibold">{d.meta.tokenAddress ? 'USDC' : ''}</span></div>
+                    <div className="text-[11px] text-faint mt-1">/ {isStream(d) ? d.meta.ratePeriod : d.meta.period}</div>
                   </div>
-                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-faint"><IconCheck size={12} /> on-chain</span>
+                  {isStream(d) ? (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-medium" style={{ color: '#22D3EE' }}><IconRepeat size={12} /> stream</span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-faint"><IconCheck size={12} /> on-chain</span>
+                  )}
                 </div>
               </Card>
             )
