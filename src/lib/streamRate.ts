@@ -53,6 +53,17 @@ export function rateToPerSecond(amount: string, unit: RateUnitKey, decimals: num
 }
 
 /**
+ * Per-second flow (ceil) to pay an exact total over a duration — the vesting rate.
+ * Pair with maxAmount = totalRaw: the cap holds the total exactly, ceil makes it
+ * reach the cap on or just before the deadline (never short, never over the total).
+ */
+export function perSecondForTotal(totalRaw: bigint, durationSeconds: number): bigint {
+  if (durationSeconds <= 0) return 0n
+  const d = BigInt(durationSeconds)
+  return (totalRaw + d - 1n) / d
+}
+
+/**
  * The exact human rate an integer per-second flow represents at a unit scale —
  * the "snapped" value to show so the UI never displays an amount the caveat can't
  * actually stream (for USDC 300/month snaps to 300.672; for 18-decimal tokens the

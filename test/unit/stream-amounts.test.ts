@@ -10,6 +10,7 @@ import { describe, test, expect } from 'bun:test'
 import { parseUnits, formatUnits } from 'viem'
 import {
   rateToPerSecond,
+  perSecondForTotal,
   perSecondToRate,
   rateBreakdown,
   secondsToBudget,
@@ -128,6 +129,31 @@ describe('streamedAvailable — claimable / enforced amount', () => {
       expect(a).toBeGreaterThanOrEqual(prev) // non-decreasing
       prev = a
     }
+  })
+})
+
+describe('perSecondForTotal — the vesting rate (total over duration, ceil)', () => {
+  test('ceils so total/duration is never under-streamed; cap=total then lands exactly', () => {
+    const total = usdc('100000')
+    const duration = 4 * YEAR
+    const aps = perSecondForTotal(total, duration)
+    // never short over the duration
+    expect(aps * BigInt(duration)).toBeGreaterThanOrEqual(total)
+    // with the cap, the exact total is reached on/just before the deadline and held
+    expect(available(aps, 0n, total, 0, duration)).toBe(total)
+    expect(available(aps, 0n, total, 0, 10 * YEAR)).toBe(total)
+  })
+
+  test('reaches the total at or BEFORE the deadline (ceil), never after', () => {
+    for (const [amount, duration] of [['100000', 4 * YEAR], ['12345.67', 17 * MONTH], ['500', 2 * YEAR]] as [string, number][]) {
+      const total = usdc(amount)
+      const aps = perSecondForTotal(total, duration)
+      expect(available(aps, 0n, total, 0, duration)).toBe(total) // fully vested by the deadline
+    }
+  })
+
+  test('zero duration yields zero (guarded, no divide-by-zero)', () => {
+    expect(perSecondForTotal(usdc('100'), 0)).toBe(0n)
   })
 })
 
