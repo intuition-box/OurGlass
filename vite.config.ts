@@ -3,6 +3,9 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
+  // The Safe App is served under /safe-app on the shared domain; the website
+  // (landing + docs + blog) owns the root. All app asset URLs are prefixed here.
+  base: '/safe-app/',
   plugins: [react(), tailwindcss()],
   server: {
     port: 5173,

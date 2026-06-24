@@ -1,0 +1,35 @@
+---
+title: Subscriptions
+description: The erc20PeriodTransfer caveat — a per-period cap that resets each period.
+---
+
+A **subscription** is a delegation bounded by the Delegation Framework's built-in
+`erc20PeriodTransfer` caveat. It models a fixed recurring bill.
+
+## The terms
+
+| Term | Meaning |
+|---|---|
+| `tokenAddress` | the ERC-20 being charged (e.g. USDC) |
+| `periodAmount` | the maximum that can be pulled **within one period** |
+| `periodDuration` | the length of a period, in seconds (e.g. 30 days) |
+| `startDate` | when the first period begins |
+
+An optional timestamp caveat can add an end date.
+
+## How the cap behaves
+
+- The allowance is a **per-period ceiling that resets** at each period boundary.
+- Multiple pulls within a period accumulate toward `periodAmount`; once it's
+  reached, further pulls in that period revert.
+- The cap is the **only** on-chain enforcement — it bounds the maximum, it does
+  not meter exact usage. Within the cap, the receiver decides when to charge.
+
+Because the cap resets and never accrues, an unused period is simply not charged —
+there is no carry-over to a later period.
+
+## When to use it
+
+Memberships, retainers, SaaS-style fixed fees — anything where the amount per
+billing cycle is known and constant. For continuous, accruing pay, use a
+[stream](/docs/concepts/streams) instead.

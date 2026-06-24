@@ -1,0 +1,9 @@
+{
+  "name": "OurGlass",
+  "description": "Recurring on-chain payment agreements for Safe — sign once, charged per period, capped on-chain, with the contract pinned to IPFS.",
+  "iconPath": "logo.svg",
+  "providedBy": {
+    "name": "OurGlass",
+    "url": "https://github.com/intuition-box/OurGlass"
+  }
+}
