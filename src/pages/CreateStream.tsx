@@ -60,9 +60,11 @@ export default function CreateStream() {
 
   const rateValid = !!rate && parseFloat(rate) > 0
   const maxValid = !!maxAmount && parseFloat(maxAmount) > 0
+  // The enforcer reverts unless maxAmount >= initialAmount.
+  const capBelowInitial = maxValid && parseFloat(maxAmount) < parseFloat(initialAmount || '0')
   const recipientValid = isAddress(recipient)
   const tokenValid = !!tokenAddress && isAddress(tokenAddress)
-  const canSign = rateValid && maxValid && recipientValid && tokenValid && !signing
+  const canSign = rateValid && maxValid && !capBelowInitial && recipientValid && tokenValid && !signing
 
   // Live accrual preview — what the beneficiary can claim after one full period,
   // and the implied per-second rate, so the accumulating nature is tangible.
@@ -273,8 +275,8 @@ export default function CreateStream() {
             {recipient && !recipientValid && <p className="text-xs text-danger mt-1">Invalid address</p>}
           </Field>
 
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Rate">
+          <div className="grid grid-cols-[1fr_120px] gap-4">
+            <Field label="Rate" hint="How fast the balance accrues.">
               <div className="relative">
                 <input type="number" placeholder="1000" value={rate} onChange={(e) => setRate(e.target.value)} min={0} step="any" className="pr-16" />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">{tokenSymbol}</span>
@@ -287,20 +289,20 @@ export default function CreateStream() {
             </Field>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Initial amount" hint="Unlocked at start. Optional.">
-              <div className="relative">
-                <input type="number" placeholder="0" value={initialAmount} onChange={(e) => setInitialAmount(e.target.value)} min={0} step="any" className="pr-16" />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">{tokenSymbol}</span>
-              </div>
-            </Field>
-            <Field label="Total cap" hint="Hard ceiling on the whole stream.">
-              <div className="relative">
-                <input type="number" placeholder="12000" value={maxAmount} onChange={(e) => setMaxAmount(e.target.value)} min={0} step="any" className="pr-16" />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">{tokenSymbol}</span>
-              </div>
-            </Field>
-          </div>
+          <Field label="Total cap" hint="The hard ceiling where the stream stops. Required, and must be ≥ the initial amount.">
+            <div className="relative">
+              <input type="number" placeholder="12000" value={maxAmount} onChange={(e) => setMaxAmount(e.target.value)} min={0} step="any" className="pr-16" />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">{tokenSymbol}</span>
+            </div>
+            {capBelowInitial && <p className="text-xs text-danger mt-1">Total cap must be ≥ the initial amount.</p>}
+          </Field>
+
+          <Field label="Initial amount" hint="Unlocked immediately at start (e.g. a signing advance). Optional — defaults to 0.">
+            <div className="relative">
+              <input type="number" placeholder="0" value={initialAmount} onChange={(e) => setInitialAmount(e.target.value)} min={0} step="any" className="pr-16" />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">{tokenSymbol}</span>
+            </div>
+          </Field>
 
           <Field label="Token">
             <div className="flex items-center gap-2">
