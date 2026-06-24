@@ -1,0 +1,235 @@
+/**
+ * Robust unit tests for the stream amount math. The security property under test:
+ * what the UI enters/displays must equal exactly what the erc20Streaming caveat
+ * enforces — no drift, over any duration or magnitude. All math is bigint, so
+ * equality is exact by construction; these tests pin that down.
+ *
+ * Run: bun test test/unit
+ */
+import { describe, test, expect } from 'bun:test'
+import { parseUnits, formatUnits } from 'viem'
+import {
+  rateToPerSecond,
+  perSecondToRate,
+  rateBreakdown,
+  secondsToBudget,
+  budgetByEndTime,
+  humanDuration,
+  unitSeconds,
+  MAX_UINT256,
+  RATE_UNITS,
+  type RateUnitKey,
+} from '../../src/lib/streamRate'
+import { streamedAvailable } from '../../src/lib/streamTerms'
+
+const DP6 = 6 // USDC / USDT
+const DP18 = 18 // most ERC-20s
+const MONTH = 2_592_000
+const YEAR = 31_557_600 // 365.25 days
+
+const usdc = (v: string) => parseUnits(v, DP6)
+
+/** Thin wrapper over the on-chain availability formula. */
+function available(aps: bigint, initial: bigint, max: bigint, start: number, now: number): bigint {
+  return streamedAvailable({
+    amountPerSecondRaw: aps.toString(),
+    initialAmountRaw: initial.toString(),
+    maxAmountRaw: max.toString(),
+    startTime: start,
+    nowSeconds: now,
+  })
+}
+
+const abs = (x: bigint) => (x < 0n ? -x : x)
+
+describe('rateToPerSecond — entered amount → per-second wei (round to nearest)', () => {
+  test('USDC 300/month rounds to 116 wei/s (floor would be 115)', () => {
+    expect(rateToPerSecond('300', 'month', DP6)).toBe(116n)
+  })
+
+  test('USDC 10/month rounds to 4 wei/s (floor would be 3)', () => {
+    expect(rateToPerSecond('10', 'month', DP6)).toBe(4n)
+  })
+
+  test('rounds down below the half-step, up at/above it', () => {
+    // x.4 wei/s → floor
+    expect(rateToPerSecond(formatUnits(BigInt(Math.round(1.4 * MONTH)), DP6), 'month', DP6)).toBe(1n)
+    // x.6 wei/s → ceil
+    expect(rateToPerSecond(formatUnits(BigInt(Math.round(1.6 * MONTH)), DP6), 'month', DP6)).toBe(2n)
+    // exactly x.5 wei/s → ceil (half-up)
+    expect(rateToPerSecond(formatUnits(BigInt(Math.round(2.5 * MONTH)), DP6), 'month', DP6)).toBe(3n)
+  })
+
+  test('never produces a negative or absurd value for zero', () => {
+    expect(rateToPerSecond('0', 'month', DP6)).toBe(0n)
+  })
+})
+
+describe('snap (perSecondToRate ∘ rateToPerSecond) — WYSIWYG, idempotent, no drift', () => {
+  const amounts = ['0.000001', '1', '2.6', '10', '300', '1000.5', '123456.789', '1000000']
+
+  test('snapping is idempotent across all units and both decimals', () => {
+    for (const dp of [DP6, DP18]) {
+      for (const u of RATE_UNITS) {
+        for (const a of amounts) {
+          const aps = rateToPerSecond(a, u.key, dp)
+          const snapped = perSecondToRate(aps, u.key, dp)
+          // Re-deriving the per-second flow from the snapped value gives the SAME integer.
+          expect(rateToPerSecond(snapped, u.key, dp)).toBe(aps)
+        }
+      }
+    }
+  })
+
+  test('switching units never drifts: any unit round-trips back to the same wei/s', () => {
+    // Fix a flow, express it at every unit, derive back — must be identical.
+    const aps0 = rateToPerSecond('2083.333', 'month', DP6)
+    for (const u of RATE_UNITS) {
+      const shown = perSecondToRate(aps0, u.key, DP6)
+      expect(rateToPerSecond(shown, u.key, DP6)).toBe(aps0)
+    }
+  })
+
+  test('displayed value equals exactly aps × unitSeconds / 10^dp (the real enforced flow)', () => {
+    const aps = rateToPerSecond('300', 'month', DP6)
+    expect(perSecondToRate(aps, 'month', DP6)).toBe(formatUnits(aps * BigInt(MONTH), DP6))
+    expect(perSecondToRate(aps, 'month', DP6)).toBe('300.672')
+  })
+})
+
+describe('streamedAvailable — claimable / enforced amount', () => {
+  test('returns the upfront amount before and at start', () => {
+    expect(available(1000n, usdc('5'), MAX_UINT256, 100, 50)).toBe(usdc('5'))
+    expect(available(1000n, usdc('5'), MAX_UINT256, 100, 100)).toBe(usdc('5'))
+  })
+
+  test('accrues linearly and exactly (bigint, no rounding)', () => {
+    const aps = 1000n
+    expect(available(aps, 0n, MAX_UINT256, 0, 3600)).toBe(aps * 3600n)
+    expect(available(aps, usdc('1'), MAX_UINT256, 0, 3600)).toBe(usdc('1') + aps * 3600n)
+  })
+
+  test('caps at maxAmount EXACTLY and never exceeds it (the enforced ceiling)', () => {
+    const max = usdc('300')
+    const aps = rateToPerSecond('300', 'month', DP6) // 116
+    // far past the cap → exactly max, not a wei more
+    expect(available(aps, 0n, max, 0, 10 ** 9)).toBe(max)
+    // monotonic and bounded across the whole life of the stream
+    let prev = 0n
+    for (let t = 0; t <= 4 * MONTH; t += MONTH / 4) {
+      const a = available(aps, 0n, max, 0, t)
+      expect(a).toBeLessThanOrEqual(max)
+      expect(a).toBeGreaterThanOrEqual(prev) // non-decreasing
+      prev = a
+    }
+  })
+})
+
+describe('exact total over a long cycle — the vesting guarantee', () => {
+  test('100k USDC over 4 years is claimable to the exact wei (cap = total)', () => {
+    const total = usdc('100000') // 100_000_000_000 wei
+    const duration = 4 * YEAR
+    const aps = (total + BigInt(duration) / 2n) / BigInt(duration) // round to nearest
+    // The cap guarantees the total, independent of the rounded rate.
+    expect(available(aps, 0n, total, 0, 10 * YEAR)).toBe(total)
+    // Never over-pays at any point in the 4 years.
+    for (let t = 0; t <= duration; t += YEAR) {
+      expect(available(aps, 0n, total, 0, t)).toBeLessThanOrEqual(total)
+    }
+  })
+
+  test('rate rounding only shifts the finish time slightly, never the total', () => {
+    const total = usdc('100000')
+    const duration = 4 * YEAR
+    const aps = (total + BigInt(duration) / 2n) / BigInt(duration)
+    // time to reach the full total
+    const finish = Number((total + aps - 1n) / aps) // ceil(total/aps)
+    // overshoot vs the nominal 4-year deadline is under a day over a 4-year span
+    expect(Math.abs(finish - duration)).toBeLessThan(86_400)
+  })
+})
+
+describe('no drift over very large durations', () => {
+  test('100-year stream accrues exactly aps × elapsed (capped), bit-for-bit', () => {
+    const aps = rateToPerSecond('5000', 'month', DP6)
+    const elapsed = 100 * YEAR
+    // unbounded → exactly the linear amount, no float drift
+    expect(available(aps, 0n, MAX_UINT256, 0, elapsed)).toBe(aps * BigInt(elapsed))
+  })
+
+  test('availability is exact at the cap boundary second', () => {
+    const aps = 7n
+    const max = aps * 1_000_000n // reached at exactly t = 1_000_000
+    expect(available(aps, 0n, max, 0, 999_999)).toBe(aps * 999_999n)
+    expect(available(aps, 0n, max, 0, 1_000_000)).toBe(max)
+    expect(available(aps, 0n, max, 0, 1_000_001)).toBe(max)
+  })
+})
+
+describe('no drift on very large amounts', () => {
+  test('1 billion USDC vested over 4 years stays exact (no overflow, no drift)', () => {
+    const total = usdc('1000000000') // 1e9 USDC = 1e15 wei
+    const duration = 4 * YEAR
+    const aps = (total + BigInt(duration) / 2n) / BigInt(duration)
+    expect(available(aps, 0n, total, 0, 10 * YEAR)).toBe(total)
+  })
+
+  test('huge per-second flow does not overflow and stays linear', () => {
+    const aps = parseUnits('1000000000', DP18) // 1e9 tokens/s, absurd but must not break
+    const elapsed = 10 * YEAR
+    expect(available(aps, 0n, MAX_UINT256, 0, elapsed)).toBe(aps * BigInt(elapsed))
+  })
+})
+
+describe('18-decimal tokens — granularity is negligible', () => {
+  test('effective monthly is within one wei/s-step of the entered amount', () => {
+    const entered = parseUnits('1000', DP18)
+    const aps = rateToPerSecond('1000', 'month', DP18)
+    const effective = aps * BigInt(MONTH)
+    // one step (1 wei/s over a month) is 2_592_000 wei = 2.592e-12 token
+    expect(abs(effective - entered)).toBeLessThanOrEqual(BigInt(MONTH))
+  })
+
+  test('snap is still idempotent at 18 decimals', () => {
+    const aps = rateToPerSecond('1234.5678', 'month', DP18)
+    expect(rateToPerSecond(perSecondToRate(aps, 'month', DP18), 'month', DP18)).toBe(aps)
+  })
+})
+
+describe('bound helpers — budget ⇄ duration consistency', () => {
+  test('budgetByEndTime is exactly initial + aps × elapsed', () => {
+    const aps = 116n
+    expect(budgetByEndTime(aps, 1000, 1000 + MONTH, usdc('5'))).toBe(usdc('5') + aps * BigInt(MONTH))
+  })
+
+  test('budgetByEndTime clamps to the upfront amount when end ≤ start', () => {
+    expect(budgetByEndTime(116n, 2000, 1000, usdc('5'))).toBe(usdc('5'))
+  })
+
+  test('secondsToBudget then stream reaches the budget (within one second of flow)', () => {
+    const aps = rateToPerSecond('2083', 'month', DP6)
+    const max = usdc('100000')
+    const secs = secondsToBudget(aps, max, 0n)
+    const reached = available(aps, 0n, max, 0, secs)
+    expect(max - reached).toBeLessThanOrEqual(aps) // at most one second of flow short
+  })
+})
+
+describe('rateBreakdown reflects the real flow at every scale', () => {
+  test('each scale equals formatUnits(aps × unitSeconds)', () => {
+    const aps = rateToPerSecond('300', 'month', DP6)
+    const bd = rateBreakdown(aps, DP6)
+    for (const u of RATE_UNITS) {
+      expect(bd[u.key as RateUnitKey]).toBe(formatUnits(aps * BigInt(unitSeconds(u.key)), DP6))
+    }
+  })
+})
+
+describe('humanDuration labels', () => {
+  test('formats common spans', () => {
+    expect(humanDuration(MONTH)).toBe('1 month')
+    expect(humanDuration(2 * MONTH)).toBe('2 months')
+    expect(humanDuration(86_400)).toBe('1 day')
+    expect(humanDuration(0)).toBe('instantly')
+  })
+})

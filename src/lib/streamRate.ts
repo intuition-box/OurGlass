@@ -50,24 +50,6 @@ export function rateToPerSecond(amount: string, unit: RateUnitKey, decimals: num
   return (total + secs / 2n) / secs
 }
 
-/** Trim a number to a sane precision for a rate input field (drops trailing zeros). */
-function formatRateNumber(n: number): string {
-  if (n === 0) return '0'
-  const fixed = n >= 1 ? n.toFixed(2) : n.toPrecision(4)
-  return String(parseFloat(fixed))
-}
-
-/**
- * Re-express the same flow at a different unit scale — used when the user changes
- * the time unit so the displayed amount stays equivalent (same per-second flow).
- * Pure display math; the on-chain truth stays `amountPerSecond`.
- */
-export function convertRate(amount: string, fromUnit: RateUnitKey, toUnit: RateUnitKey): string {
-  const n = parseFloat(amount)
-  if (!Number.isFinite(n)) return amount
-  return formatRateNumber((n * unitSeconds(toUnit)) / unitSeconds(fromUnit))
-}
-
 /**
  * The exact human rate an integer per-second flow represents at a unit scale —
  * the "snapped" value to show so the UI never displays an amount the caveat can't
