@@ -390,7 +390,7 @@ export default function CreateStream() {
 
         <Card className="p-5 mt-5 space-y-5">
           <div className="flex items-center gap-2">
-            {([['vesting', 'Vesting'], ['custom', 'Custom rate']] as [SetupMode, string][]).map(([key, label]) => (
+            {([['vesting', 'By total'], ['custom', 'By rate']] as [SetupMode, string][]).map(([key, label]) => (
               <button
                 key={key}
                 type="button"
