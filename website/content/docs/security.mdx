@@ -1,0 +1,68 @@
+---
+title: Security
+description: The trust model — what is enforced on-chain, and what it does not promise.
+icon: ShieldCheck
+---
+
+OurGlass moves real ERC-20 value under delegated authority. This page states
+plainly what the protocol guarantees and what it does not.
+
+## On-chain enforcement is the only guarantee
+
+Every charge is bounded by a **caveat** evaluated on-chain by the Delegation
+Framework. OurGlass deploys no custom enforcer — the caveats are MetaMask's
+audited contracts. There is no backend that can be bypassed to over-charge: if a
+redemption would exceed the signed bound, the transaction reverts.
+
+A caveat is a **cap, not a meter.** It bounds the maximum the receiver can pull;
+it does not verify off-chain facts like "how many charges were due." Within the
+cap, the receiver decides when to draw.
+
+## Subscriptions: per-period cap
+
+For a [subscription](/docs/concepts/subscriptions) the bound is
+`erc20PeriodTransfer`: at most `periodAmount` per `periodDuration`, resetting each
+period. Worst case within the signed terms, the receiver pulls the full
+`periodAmount` every period until revoked. Set `periodAmount` no higher than the
+real obligation.
+
+## Streams: rate cap, and the unbounded `maxAmount`
+
+For a [stream](/docs/concepts/streams) the bound is `erc20Streaming`: the amount
+available is `initialAmount + amountPerSecond × elapsed`, clamped by `maxAmount`.
+
+OurGlass neutralizes `maxAmount` to the maximum `uint256`, so there is **no total
+lifetime ceiling**. The protections that remain are:
+
+- **The rate.** The receiver can never claim faster than `amountPerSecond`
+  allows, regardless of how long the stream runs.
+- **Revocation.** The payer can `disableDelegation` at any time; after that no
+  further claim succeeds. With no total cap, revoke is the off-ramp that bounds
+  exposure — the practical maximum loss is `amountPerSecond × (time until the
+  payer revokes)`.
+
+Set the rate to the real obligation and treat the funded balance in the Safe as
+the true exposure, since the caveat ceiling is intentionally not binding.
+
+## Non-custodial
+
+Funds never leave the payer's Safe until a charge executes, and a charge can only
+move tokens within the caveat's bound. OurGlass holds no keys to the payer's
+funds.
+
+## Signatures and replay
+
+Each agreement is a single EIP-712 delegation. Replay protection comes from the
+EIP-712 domain (chain id + the `DelegationManager` as verifying contract) and the
+delegation `salt = keccak256(terms)`. The salt binds the signature to the exact
+IPFS-pinned agreement; a signature is never valid across chains or across
+different terms.
+
+## Self-deployed enforcer instances
+
+For [analytics](/docs/analytics), OurGlass may route delegations to its **own
+deployed instances** of MetaMask's audited enforcers (unmodified bytecode, new
+address). This changes the emitter address of the caveat events but not the
+security logic. The integrity requirement: any such instance must be byte-identical
+to the audited release, and the deployed address is part of the signed caveat — so
+the signature covers it and it cannot be swapped after signing.

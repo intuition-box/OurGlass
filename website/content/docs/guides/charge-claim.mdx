@@ -1,0 +1,26 @@
+---
+title: Charge or claim
+description: How the receiver pulls what an agreement allows.
+---
+
+The receiver redeems the delegation against the `DelegationManager`; the caveat
+caps the pull.
+
+## Subscriptions — charge per period
+
+The receiver pulls up to `periodAmount` once the period allows it. A second pull
+within the same period accumulates toward the cap; beyond the cap it reverts.
+Charging again in the same period after the cap is reached is a no-op revert.
+
+## Streams — claim the accrued balance
+
+The receiver claims whatever has accrued so far:
+`initialAmount + amountPerSecond × elapsed`, minus what was already claimed,
+clamped by `maxAmount`. Because the balance accrues and does not reset, claiming
+can happen at any cadence without losing value.
+
+## Gas
+
+Charges can be sent directly by the receiver (the receiver pays gas) or routed
+gaslessly through a relayer that is reimbursed in the token. Either way, the caveat
+bound is what protects the payer.

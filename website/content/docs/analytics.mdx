@@ -1,0 +1,91 @@
+---
+title: Analytics
+description: On-chain, verifiable analytics — and the attribution problem it has to solve.
+icon: ChartLine
+---
+
+OurGlass aims for a **decentralized, verifiable** analytics surface: charge count
+and token volume over time, broken down by agreement, receiver, payer, and token —
+all derived from public on-chain data, with no private backend required.
+
+## The attribution problem
+
+OurGlass has no contract of its own, and it is local-first (agreements live in the
+payer's `localStorage`). A charge is a call to the **shared** `DelegationManager`
+plus an ERC-20 `Transfer`. Nothing on-chain says "OurGlass": the enforcer
+addresses are shared across every app on the Delegation Framework, parties vary
+per agreement, and the salt is unguessable. So every analytics approach reduces to
+one question: **how do we plant an OurGlass-attributable marker on-chain that
+needs no central registry?**
+
+## The marker: redeploy the audited enforcers
+
+Deploy OurGlass's **own instances** of MetaMask's audited enforcers (unmodified
+bytecode) and route new agreements to them, then index those contracts' events.
+The emitter address of a caveat event is the enforcer instance — so attribution
+becomes a one-key filter (`WHERE contract_address = <our enforcer>`) with **no
+central list of delegation hashes**. This works precisely because the app is
+local-first.
+
+This now spans **both** payment shapes, so OurGlass maintains two self-deployed
+instances:
+
+- the `ERC20PeriodTransferEnforcer` for [subscriptions](/docs/concepts/subscriptions);
+- the `ERC20StreamingEnforcer` for [streams](/docs/concepts/streams).
+
+The security implications of self-deploying audited bytecode are covered in
+[Security](/docs/security#self-deployed-enforcer-instances).
+
+## The on-chain trace
+
+Two sources carry everything the dashboard needs.
+
+**1. `DelegationManager.RedeemedDelegation`** — once per redemption, for both
+shapes. Carries the root delegator (payer), the redeemer (receiver), and the full
+delegation struct including caveats and the `salt` (= the pinned-agreement hash).
+
+**2. The enforcer's per-charge event** — filtered by our enforcer address:
+
+- Subscriptions: `ERC20PeriodTransferEnforcer.TransferredInPeriod`. The per-charge
+  amount is the in-period delta of the cumulative `transferredInCurrentPeriod`,
+  which resets each period — handle the period-boundary reset when computing it.
+- Streams: the streaming enforcer's transfer/claim event. A stream is claim-based,
+  so the per-claim amount is read directly rather than via a period delta.
+
+<Callout type="warn">
+Confirm the exact streaming event name and field layout against
+`@metamask/delegation-abis` before building the indexer — do not assume it mirrors
+the period enforcer. Streams accrue and are claimed, so the amount semantics
+differ from the period enforcer's cumulative-with-reset counter.
+</Callout>
+
+## Deriving the dashboard
+
+From these events, filtered to our enforcer instances:
+
+| Metric | Derivation |
+|---|---|
+| Charge / claim count | count of per-charge events |
+| Amount | period delta (subscriptions) or claimed amount (streams) |
+| Volume over time | sum of amounts bucketed by timestamp |
+| Per agreement | group by `delegationHash` |
+| Per receiver | group by redeemer |
+| Per payer | join `delegationHash` → `RedeemedDelegation.rootDelegator` |
+| Per token | the `token` field |
+| Active agreements | distinct `delegationHash` charged in window, cross-referenced with `DisabledDelegation` for revokes |
+
+## Indexing
+
+- **Primary:** a subgraph keyed on the per-charge events from our enforcer
+  addresses (plus `RedeemedDelegation` / `DisabledDelegation`). Works on testnets
+  and is the decentralized-friendly indexer.
+- **Secondary:** a Dune dashboard once on mainnet, decoding the same events.
+
+The UI reads the subgraph over GraphQL — no private backend, no dependency on any
+single client's `localStorage`.
+
+## Status
+
+This is the planned analytics design, updated to cover streams alongside
+subscriptions. It is not yet implemented; only new agreements routed to the
+self-deployed enforcers would be attributable.

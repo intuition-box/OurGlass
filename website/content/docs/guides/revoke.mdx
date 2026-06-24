@@ -1,0 +1,21 @@
+---
+title: Revoke
+description: Cancel an agreement on-chain at any time.
+---
+
+The payer can cancel any agreement on-chain by disabling the delegation
+(`disableDelegation`).
+
+## What happens
+
+- After revocation, any further redemption of that delegation **reverts** — the
+  receiver can no longer charge or claim.
+- Revocation is on-chain and does not need the receiver's cooperation.
+
+## Why it matters for streams
+
+A [stream](/docs/concepts/streams) has no total ceiling (its `maxAmount` is
+neutralized), so revocation is the mechanism that bounds total exposure. The
+practical maximum a stream can pay is the rate multiplied by the time until the
+payer revokes. Revoke promptly when a stream should stop. See
+[Security](/docs/security).

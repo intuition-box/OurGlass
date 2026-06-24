@@ -1,0 +1,79 @@
+@import 'tailwindcss';
+@import 'fumadocs-ui/css/neutral.css';
+@import 'fumadocs-ui/css/preset.css';
+
+/* OurGlass identity ported onto Fumadocs. Flat, dark, typography-driven.
+   Mint accent (#58e6b8) + a live "stream" blue (#3aa3ff). Tokens mirror the
+   Safe App's `src/index.css` so the website and the app read as one product. */
+
+:root,
+.dark {
+  --color-fd-background: #0a0a0b;
+  --color-fd-foreground: #fafafa;
+  --color-fd-muted: #161618;
+  --color-fd-muted-foreground: #9a9aa0;
+  --color-fd-popover: #101012;
+  --color-fd-popover-foreground: #fafafa;
+  --color-fd-card: #101012;
+  --color-fd-card-foreground: #fafafa;
+  --color-fd-border: #2e2e33;
+  --color-fd-primary: #58e6b8;
+  --color-fd-primary-foreground: #0a0a0b;
+  --color-fd-secondary: #161618;
+  --color-fd-secondary-foreground: #fafafa;
+  --color-fd-accent: #1c1c1f;
+  --color-fd-accent-foreground: #fafafa;
+  --color-fd-ring: #58e6b8;
+  --color-fd-overlay: rgba(0, 0, 0, 0.5);
+
+  /* OurGlass brand */
+  --accent: #58e6b8;
+  --accent-soft: rgba(88, 230, 184, 0.12);
+  --accent-line: rgba(88, 230, 184, 0.3);
+  --stream: #3aa3ff;
+  --color-base: #0a0a0b;
+}
+
+@theme {
+  --color-accent: #58e6b8;
+  --color-stream: #3aa3ff;
+  --color-base: #0a0a0b;
+  --color-ink: #fafafa;
+  --color-dim: #9a9aa0;
+  --color-faint: #6b6b72;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+body {
+  margin: 0;
+  background: var(--color-fd-background);
+  color: var(--color-fd-foreground);
+  letter-spacing: -0.011em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: var(--accent-soft);
+}
+
+/* The signature: a thin live stream running down an edge. */
+.stream-edge {
+  background: linear-gradient(180deg, var(--accent), var(--stream) 60%, var(--accent));
+  background-size: 100% 300%;
+  animation: og-flow 6s linear infinite;
+}
+@keyframes og-flow {
+  to {
+    background-position: 0 300%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stream-edge {
+    animation: none;
+  }
+  .hero-video {
+    display: none;
+  }
+}

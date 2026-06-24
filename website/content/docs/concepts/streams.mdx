@@ -1,0 +1,61 @@
+---
+title: Streams
+description: The erc20Streaming caveat — a balance that accrues linearly and is claimable anytime.
+---
+
+A **stream** is a delegation bounded by the Delegation Framework's built-in
+`erc20Streaming` caveat (the `ERC20StreamingEnforcer`). Instead of a per-period
+ceiling, it unlocks tokens **continuously over time** — think payroll or vesting.
+
+## The terms
+
+The streaming caveat is built from four parameters:
+
+| Term | Meaning |
+|---|---|
+| `tokenAddress` | the ERC-20 being streamed |
+| `initialAmount` | amount unlocked immediately at `startTime` (a cliff; can be 0) |
+| `maxAmount` | a hard ceiling on the **cumulative** amount the stream can ever unlock |
+| `amountPerSecond` | the linear accrual rate |
+| `startTime` | when accrual begins |
+
+## How accrual works
+
+At any time `t`, the amount available to claim is:
+
+```
+available(t) = min(maxAmount, initialAmount + amountPerSecond × (t − startTime)) − alreadyClaimed
+```
+
+The balance ramps up linearly from `initialAmount` at the rate `amountPerSecond`,
+and `maxAmount` clamps the total. Unlike a [subscription](/docs/concepts/subscriptions),
+the balance **accrues and does not reset** — if the receiver doesn't claim for a
+while, nothing is lost; it keeps accumulating (up to `maxAmount`).
+
+## About `maxAmount`
+
+`maxAmount` is a **cumulative lifetime cap**, not a per-period cap. Once the
+stream has unlocked `maxAmount` in total, more elapsed time unlocks nothing
+further.
+
+OurGlass streams set `maxAmount` to the maximum `uint256`, so the ceiling never
+binds and the **rate is the only limit** — the stream is effectively unbounded in
+total but still capped in how fast it can be drawn. The field cannot be omitted
+(the caveat's terms layout always includes it); neutralizing it to the maximum is
+how you express "no total cap."
+
+The security consequence of an unbounded `maxAmount` is covered in
+[Security](/docs/security): with no total ceiling, the protections that remain are
+the accrual **rate** and the payer's ability to **revoke**.
+
+## Rate as a scale
+
+In the app, you set a human rate (for example "1000 USDC per month") and OurGlass
+derives `amountPerSecond` by integer division. Sub-wei-per-second remainders are
+dropped, so the effective rate is at most the one you requested — it never
+over-pays.
+
+## When to use it
+
+Salaries, grants paid over time, vesting, any continuous obligation. For a fixed
+amount per billing cycle, use a [subscription](/docs/concepts/subscriptions).

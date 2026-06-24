@@ -1,0 +1,20 @@
+export const appName = 'OurGlass';
+export const siteUrl = 'https://ourglass.intuition.box';
+export const docsRoute = '/docs';
+export const blogRoute = '/blog';
+export const analyticsRoute = '/analytics';
+
+// The Vite Safe App is served on the same domain under /safe-app (Caddy routing).
+export const appRoute = '/safe-app';
+export const redeemRoute = '/safe-app/redeem';
+export const safeGlobalUrl = 'https://app.safe.global';
+
+export const twitterUrl = 'https://x.com/intuition_box';
+export const umbrellaUrl = 'https://intuition.box';
+
+export const gitConfig = {
+  user: 'intuition-box',
+  repo: 'OurGlass',
+  branch: 'main',
+};
+export const githubUrl = `https://github.com/${gitConfig.user}/${gitConfig.repo}`;

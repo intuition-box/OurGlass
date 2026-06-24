@@ -1,0 +1,28 @@
+---
+title: Create an agreement
+description: Sign a subscription or a stream — one signature, bound to the pinned terms.
+---
+
+Creating an agreement is a single signature from the payer's Safe.
+
+## Steps
+
+1. **Choose the shape.** A [subscription](/docs/concepts/subscriptions) (per-period
+   cap) or a [stream](/docs/concepts/streams) (linear accrual).
+2. **Set the terms.** Token, receiver, amount/rate, cadence, start date, optional
+   end date.
+3. **Pin & sign.** OurGlass pins the human-readable agreement to IPFS and derives
+   the delegation `salt = keccak256(terms)`. You sign one EIP-712 delegation.
+4. **Done.** The signed delegation is stored client-side. No further signing is
+   needed for future charges.
+
+## What you are signing
+
+You are authorizing the receiver to pull tokens **within the caveat bound** —
+never more than the signed terms allow. The terms are fixed at signing time:
+changing any term would change the salt and invalidate the signature.
+
+<Callout type="info">
+Set the period amount (subscriptions) or rate (streams) no higher than the real
+obligation. The caveat is a cap, not a meter — see [Security](/docs/security).
+</Callout>

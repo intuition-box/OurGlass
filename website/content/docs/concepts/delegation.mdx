@@ -1,0 +1,44 @@
+---
+title: Delegation
+description: The single EIP-712 delegation that every OurGlass agreement is built on.
+---
+
+A delegation is an EIP-712-signed message that grants a **delegate** (the
+receiver) permission to execute a bounded action on behalf of a **delegator**
+(the payer), enforced by the MetaMask Delegation Framework's `DelegationManager`.
+
+## How an agreement is created
+
+1. **Build the terms.** The UI assembles a human-readable agreement: token,
+   amount, cadence, parties, start (and optional end) date.
+2. **Pin to IPFS.** The agreement JSON is pinned; you get a content hash.
+3. **Derive the salt.** The delegation `salt = keccak256(terms)`. This binds the
+   signature to the exact pinned agreement — change a byte and the salt, and
+   therefore the signature, no longer matches.
+4. **Sign.** The payer signs the delegation (one EIP-712 signature).
+5. **Store.** The signed delegation is kept client-side (the Safe App stores it in
+   `localStorage`).
+
+## How a charge happens
+
+The receiver redeems the delegation against the `DelegationManager`
+(`redeemDelegations`), supplying the signed delegation plus the transfer to
+execute. The framework checks every **caveat** before allowing the transfer:
+
+- A **subscription** carries the [`erc20PeriodTransfer`](/docs/concepts/subscriptions)
+  caveat — a per-period cap.
+- A **stream** carries the [`erc20Streaming`](/docs/concepts/streams) caveat — a
+  linearly accruing balance.
+
+The caveat is the only on-chain enforcement. OurGlass deploys no custom enforcer.
+
+## Revocation
+
+The payer can disable a delegation on-chain (`disableDelegation`). After that, any
+further redemption reverts — the receiver can no longer charge.
+
+## Replay safety
+
+Replay protection comes from the EIP-712 domain (chain id + the `DelegationManager`
+as the verifying contract) plus the unique `salt`. A signature is valid only for
+one chain and one exact set of terms — never reuse it across chains or agreements.
