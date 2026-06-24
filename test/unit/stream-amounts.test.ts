@@ -42,22 +42,28 @@ function available(aps: bigint, initial: bigint, max: bigint, start: number, now
 
 const abs = (x: bigint) => (x < 0n ? -x : x)
 
-describe('rateToPerSecond — entered amount → per-second wei (round to nearest)', () => {
-  test('USDC 300/month rounds to 116 wei/s (floor would be 115)', () => {
+describe('rateToPerSecond — entered amount → per-second wei (ceil: never short)', () => {
+  test('USDC 300/month ceils to 116 wei/s (115.74 rounds up)', () => {
     expect(rateToPerSecond('300', 'month', DP6)).toBe(116n)
   })
 
-  test('USDC 10/month rounds to 4 wei/s (floor would be 3)', () => {
+  test('USDC 10/month ceils to 4 wei/s (3.86 rounds up)', () => {
     expect(rateToPerSecond('10', 'month', DP6)).toBe(4n)
   })
 
-  test('rounds down below the half-step, up at/above it', () => {
-    // x.4 wei/s → floor
-    expect(rateToPerSecond(formatUnits(BigInt(Math.round(1.4 * MONTH)), DP6), 'month', DP6)).toBe(1n)
-    // x.6 wei/s → ceil
-    expect(rateToPerSecond(formatUnits(BigInt(Math.round(1.6 * MONTH)), DP6), 'month', DP6)).toBe(2n)
-    // exactly x.5 wei/s → ceil (half-up)
-    expect(rateToPerSecond(formatUnits(BigInt(Math.round(2.5 * MONTH)), DP6), 'month', DP6)).toBe(3n)
+  test('always rounds UP so the flow is never below the intended rate', () => {
+    // any fraction of a wei/s rounds up to the next whole wei/s
+    expect(rateToPerSecond(formatUnits(BigInt(Math.round(1.01 * MONTH)), DP6), 'month', DP6)).toBe(2n)
+    expect(rateToPerSecond(formatUnits(BigInt(Math.round(1.99 * MONTH)), DP6), 'month', DP6)).toBe(2n)
+    // an exact whole wei/s does NOT get a needless +1
+    expect(rateToPerSecond(formatUnits(2n * BigInt(MONTH), DP6), 'month', DP6)).toBe(2n)
+  })
+
+  test('the effective rate is always ≥ the entered amount (never short)', () => {
+    for (const a of ['1', '200', '300', '1000', '12345.67']) {
+      const aps = rateToPerSecond(a, 'month', DP6)
+      expect(aps * BigInt(MONTH)).toBeGreaterThanOrEqual(usdc(a))
+    }
   })
 
   test('never produces a negative or absurd value for zero', () => {
