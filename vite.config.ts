@@ -15,8 +15,10 @@ export default defineConfig({
   define: {
     global: 'globalThis',
   },
-  // Required for Safe App iframe communication
   build: {
-    sourcemap: true,
+    // No production sourcemaps: they add ~7.5MB of .map output and are the main
+    // memory hog during `vite build` (OOM / exit 137 in the Coolify build
+    // container). Safe iframe communication needs CORS/framing headers, not maps.
+    sourcemap: false,
   },
 })
