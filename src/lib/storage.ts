@@ -16,7 +16,7 @@ export interface StoredDelegation {
   }
   meta: {
     label: string
-    scopeType: 'ethSpendingLimit' | 'erc20SpendingLimit' | 'transferIntent' | 'swapIntent' | 'custom'
+    scopeType: 'ethSpendingLimit' | 'erc20SpendingLimit' | 'erc20Streaming' | 'transferIntent' | 'swapIntent' | 'custom'
     createdAt: string
     chainId: number
     safeAddress: Address
@@ -32,6 +32,16 @@ export interface StoredDelegation {
     expiryDate?: string
     // Where the funds are paid — the payee, who is also the delegate.
     recipient?: Address
+    // Streaming-specific (scopeType === 'erc20Streaming'). The erc20Streaming
+    // caveat accrues linearly: balance = min(maxAmount, initialAmount +
+    // amountPerSecond * (now - startTime)). All amounts are raw wei strings.
+    amountPerSecond?: string
+    initialAmount?: string
+    maxAmount?: string
+    startTime?: number
+    // Display-only: the human rate the beneficiary signed up for (e.g. "1000" / "monthly").
+    ratePerPeriod?: string
+    ratePeriod?: string
     // Custom delegation meta
     targetAddress?: Address
     methodSelector?: Hex
