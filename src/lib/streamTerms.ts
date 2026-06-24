@@ -1,4 +1,4 @@
-import { keccak256, parseUnits, toBytes, type Address, type Hex } from 'viem'
+import { keccak256, toBytes, type Address, type Hex } from 'viem'
 import { canonicalize, type PinResult } from './subscriptionTerms'
 
 /**
@@ -40,24 +40,18 @@ export function hashStreamTerms(terms: StreamTerms): Hex {
   return keccak256(toBytes(canonicalize(terms)))
 }
 
-/**
- * Derive the per-second accrual rate from a human rate over a period. Integer
- * division in wei — sub-wei-per-second remainders are dropped, so the effective
- * rate is at most the requested one (never over-pays).
- */
-export function ratePerSecondRaw(ratePerPeriod: string, periodSeconds: number, decimals: number): bigint {
-  if (periodSeconds <= 0) throw new Error('periodSeconds must be positive')
-  return parseUnits(ratePerPeriod, decimals) / BigInt(periodSeconds)
-}
-
 export function buildStreamTerms(params: {
   organization: { name: string; recipient: Address; delegate: Address }
   subscriber: { label: string; account: Address }
   token: { address: Address; symbol: string; decimals: number }
+  // Display rate (e.g. "1000" over `ratePeriodSeconds`).
   ratePerPeriod: string
   ratePeriodSeconds: number
-  initialAmount: string
-  maxAmount: string
+  // On-chain caveat parameters, already raw (wei strings). maxAmountRaw may be
+  // MAX_UINT256 for an unbounded stream (rate-limited, runs until revoked).
+  amountPerSecondRaw: string
+  initialAmountRaw: string
+  maxAmountRaw: string
   startTime?: number
   cancellation?: string
 }): StreamTerms {
@@ -68,9 +62,9 @@ export function buildStreamTerms(params: {
     token: params.token,
     ratePerPeriod: params.ratePerPeriod,
     ratePeriodSeconds: params.ratePeriodSeconds,
-    amountPerSecondRaw: ratePerSecondRaw(params.ratePerPeriod, params.ratePeriodSeconds, params.token.decimals).toString(),
-    initialAmountRaw: parseUnits(params.initialAmount, params.token.decimals).toString(),
-    maxAmountRaw: parseUnits(params.maxAmount, params.token.decimals).toString(),
+    amountPerSecondRaw: params.amountPerSecondRaw,
+    initialAmountRaw: params.initialAmountRaw,
+    maxAmountRaw: params.maxAmountRaw,
     startTime,
     cancellation:
       params.cancellation ?? 'Cancellable anytime by the subscriber via disableDelegation. Accrued-but-unclaimed balance is forfeited on cancellation.',

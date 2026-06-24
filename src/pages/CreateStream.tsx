@@ -13,14 +13,24 @@ import {
   buildStreamAgreement,
   pinStreamAgreement,
   offlinePinStream,
-  ratePerSecondRaw,
   streamedAvailable,
 } from '../lib/streamTerms'
-import { periodToSeconds, periodLabel, type PeriodType } from '../lib/enforcers'
+import {
+  RATE_UNITS,
+  MAX_UINT256,
+  rateToPerSecond,
+  convertRate,
+  rateBreakdown,
+  secondsToBudget,
+  budgetByEndTime,
+  humanDuration,
+  unitSeconds,
+  type RateUnitKey,
+} from '../lib/streamRate'
 import { getEnvironment } from '../lib/environment'
 import { saveDelegation, type StoredDelegation } from '../lib/storage'
 import { Card, Btn, GaslessButton, USDC, Mono, CopyChip, Payee } from '../ui/components'
-import { IconCube, IconLock, IconCheck, IconExt, IconHash, IconRepeat } from '../ui/icons'
+import { IconCube, IconLock, IconCheck, IconExt, IconHash, IconRepeat, IconCal } from '../ui/icons'
 
 const chains: Record<number, typeof baseSepolia | typeof base | typeof sepolia> = { 84532: baseSepolia, 11155111: sepolia, 8453: base }
 
@@ -29,10 +39,17 @@ const USDC_BY_CHAIN: Record<number, Address> = {
   11155111: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
   8453: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
 }
-const PERIODS: PeriodType[] = ['minutely', 'hourly', 'daily', 'weekly', 'monthly']
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
+const trimAmount = (s: string) => (s.includes('.') ? s.replace(/\.?0+$/, '') : s)
 
 type SignStep = 'idle' | 'building' | 'pinning' | 'signing'
+type BoundMode = 'unbounded' | 'budget' | 'enddate'
+
+const BOUND_MODES: { key: BoundMode; label: string }[] = [
+  { key: 'unbounded', label: 'Until revoked' },
+  { key: 'budget', label: 'Total budget' },
+  { key: 'enddate', label: 'End date' },
+]
 
 export default function CreateStream() {
   const { sdk, safe } = useSafeAppsSDK()
@@ -40,9 +57,11 @@ export default function CreateStream() {
   const [beneficiaryName, setBeneficiaryName] = useState('')
   const [recipient, setRecipient] = useState('')
   const [rate, setRate] = useState('')
-  const [ratePeriod, setRatePeriod] = useState<PeriodType>('monthly')
+  const [rateUnit, setRateUnit] = useState<RateUnitKey>('month')
+  const [boundMode, setBoundMode] = useState<BoundMode>('unbounded')
+  const [budgetAmount, setBudgetAmount] = useState('')
+  const [endDate, setEndDate] = useState('')
   const [initialAmount, setInitialAmount] = useState('0')
-  const [maxAmount, setMaxAmount] = useState('')
   const [useCustomToken, setUseCustomToken] = useState(false)
   const [customToken, setCustomToken] = useState('')
   const [customDecimals, setCustomDecimals] = useState(6)
@@ -55,43 +74,72 @@ export default function CreateStream() {
 
   const defaultUsdc = USDC_BY_CHAIN[safe.chainId]
   const tokenAddress = useCustomToken ? customToken : defaultUsdc
-  const tokenDecimals = useCustomToken ? customDecimals : 6
+  const decimals = useCustomToken ? customDecimals : 6
   const tokenSymbol = useCustomToken ? 'tokens' : 'USDC'
 
   const rateValid = !!rate && parseFloat(rate) > 0
-  const maxValid = !!maxAmount && parseFloat(maxAmount) > 0
-  // The enforcer reverts unless maxAmount >= initialAmount.
-  const capBelowInitial = maxValid && parseFloat(maxAmount) < parseFloat(initialAmount || '0')
   const recipientValid = isAddress(recipient)
   const tokenValid = !!tokenAddress && isAddress(tokenAddress)
-  const canSign = rateValid && maxValid && !capBelowInitial && recipientValid && tokenValid && !signing
 
-  // Live accrual preview — what the beneficiary can claim after one full period,
-  // and the implied per-second rate, so the accumulating nature is tangible.
-  const preview = useMemo(() => {
-    if (!rateValid || !maxValid || !tokenValid) return null
-    try {
-      const periodSeconds = Number(periodToSeconds(ratePeriod))
-      const aps = ratePerSecondRaw(rate, periodSeconds, tokenDecimals)
-      const init = parseUnits(initialAmount || '0', tokenDecimals)
-      const max = parseUnits(maxAmount, tokenDecimals)
-      const afterOnePeriod = streamedAvailable({
-        amountPerSecondRaw: aps.toString(),
-        initialAmountRaw: init.toString(),
-        maxAmountRaw: max.toString(),
-        startTime: 0,
-        nowSeconds: periodSeconds,
-      })
-      const secondsToCap = aps > 0n ? Number((max - init > 0n ? max - init : 0n) / aps) : 0
-      return {
-        amountPerSecond: formatUnits(aps, tokenDecimals),
-        afterOnePeriod: formatUnits(afterOnePeriod, tokenDecimals),
-        daysToCap: secondsToCap > 0 ? Math.ceil(secondsToCap / 86400) : 0,
-      }
-    } catch {
-      return null
+  // Per-second flow is the on-chain truth; the unit is only a display scale.
+  const amountPerSecond = useMemo<bigint>(() => {
+    if (!rateValid || !tokenValid) return 0n
+    try { return rateToPerSecond(rate, rateUnit, decimals) } catch { return 0n }
+  }, [rate, rateValid, tokenValid, rateUnit, decimals])
+
+  const initialRaw = useMemo<bigint>(() => {
+    try { return parseUnits(initialAmount || '0', decimals) } catch { return 0n }
+  }, [initialAmount, decimals])
+
+  const budgetRaw = useMemo<bigint>(() => {
+    if (boundMode !== 'budget' || !budgetAmount) return 0n
+    try { return parseUnits(budgetAmount, decimals) } catch { return 0n }
+  }, [boundMode, budgetAmount, decimals])
+
+  const budgetBelowInitial = boundMode === 'budget' && !!budgetAmount && budgetRaw < initialRaw
+  const budgetValid = boundMode !== 'budget' || (parseFloat(budgetAmount) > 0 && !budgetBelowInitial)
+  const endValid = boundMode !== 'enddate' || (!!endDate && new Date(endDate).getTime() / 1000 > Math.floor(Date.now() / 1000))
+  const canSign = rateValid && amountPerSecond > 0n && recipientValid && tokenValid && budgetValid && endValid && !signing
+
+  // Changing the unit re-expresses the same flow at the new scale (same per-second).
+  function changeUnit(next: RateUnitKey) {
+    if (rate) setRate(trimAmount(convertRate(rate, rateUnit, next)))
+    setRateUnit(next)
+  }
+
+  // Resolve the enforcer maxAmount for the chosen bound mode at timestamp `now`.
+  function resolveMaxRaw(now: number): bigint {
+    if (boundMode === 'budget') return budgetRaw
+    if (boundMode === 'enddate') {
+      const endSec = endDate ? Math.floor(new Date(endDate).getTime() / 1000) : now
+      return budgetByEndTime(amountPerSecond, now, endSec, initialRaw)
     }
-  }, [rate, rateValid, maxValid, tokenValid, ratePeriod, initialAmount, maxAmount, tokenDecimals])
+    return MAX_UINT256
+  }
+
+  const preview = useMemo(() => {
+    if (!rateValid || !tokenValid || amountPerSecond <= 0n) return null
+    const now = Math.floor(Date.now() / 1000)
+    const maxRaw = resolveMaxRaw(now)
+    const bd = rateBreakdown(amountPerSecond, decimals)
+    const afterOne = streamedAvailable({
+      amountPerSecondRaw: amountPerSecond.toString(),
+      initialAmountRaw: initialRaw.toString(),
+      maxAmountRaw: maxRaw.toString(),
+      startTime: 0,
+      nowSeconds: unitSeconds(rateUnit),
+    })
+    return {
+      perSecond: bd.second,
+      perDay: bd.day,
+      perMonth: bd.month,
+      afterOne: formatUnits(afterOne, decimals),
+      unbounded: boundMode === 'unbounded',
+      budgetStr: boundMode === 'unbounded' ? null : trimAmount(formatUnits(maxRaw, decimals)),
+      lasts: boundMode === 'unbounded' ? null : humanDuration(secondsToBudget(amountPerSecond, maxRaw, initialRaw)),
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rateValid, tokenValid, amountPerSecond, boundMode, budgetRaw, endDate, initialRaw, rateUnit, decimals])
 
   async function handleSign() {
     setSigning(true)
@@ -114,17 +162,19 @@ export default function CreateStream() {
 
       const environment = getEnvironment(safe.chainId)
       const now = Math.floor(Date.now() / 1000)
-      const periodSeconds = Number(periodToSeconds(ratePeriod))
+      const aps = rateToPerSecond(rate, rateUnit, decimals)
+      const maxRaw = resolveMaxRaw(now)
 
       // Pin the human-readable contract and bind the signature to it: salt = keccak256(terms).
       const terms = buildStreamTerms({
         organization: { name: beneficiaryName || 'Beneficiary', recipient: recipient as Address, delegate },
         subscriber: { label: 'Safe', account: safe.safeAddress as Address },
-        token: { address: tokenAddress as Address, symbol: tokenSymbol, decimals: tokenDecimals },
+        token: { address: tokenAddress as Address, symbol: tokenSymbol, decimals },
         ratePerPeriod: rate,
-        ratePeriodSeconds: periodSeconds,
-        initialAmount: initialAmount || '0',
-        maxAmount,
+        ratePeriodSeconds: unitSeconds(rateUnit),
+        amountPerSecondRaw: aps.toString(),
+        initialAmountRaw: initialRaw.toString(),
+        maxAmountRaw: maxRaw.toString(),
         startTime: now,
       })
       const agreement = buildStreamAgreement({
@@ -138,10 +188,6 @@ export default function CreateStream() {
       setPinnedCid(pin.cid)
       const salt = agreement.termsHash
 
-      const amountPerSecond = ratePerSecondRaw(rate, periodSeconds, tokenDecimals)
-      const initialRaw = parseUnits(initialAmount || '0', tokenDecimals)
-      const maxRaw = parseUnits(maxAmount, tokenDecimals)
-
       const sdkDelegation = createDelegation({
         to: delegate,
         from: moduleAddress,
@@ -151,7 +197,7 @@ export default function CreateStream() {
           tokenAddress: tokenAddress as Address,
           initialAmount: initialRaw,
           maxAmount: maxRaw,
-          amountPerSecond,
+          amountPerSecond: aps,
           startTime: now,
         } as never,
         salt,
@@ -174,7 +220,7 @@ export default function CreateStream() {
       const stored: StoredDelegation = {
         delegation: { ...delegation, signature: (result?.signature || result?.safeTxHash || '0x') as Hex },
         meta: {
-          label: beneficiaryName || `${rate} ${tokenSymbol} ${periodLabel(ratePeriod)} stream`,
+          label: beneficiaryName || `${rate} ${tokenSymbol}/${rateUnit} stream`,
           scopeType: 'erc20Streaming',
           createdAt: new Date().toISOString(),
           chainId: safe.chainId,
@@ -185,12 +231,12 @@ export default function CreateStream() {
           agreement: { cid: pin.cid, uri: pin.uri, termsHash: agreement.termsHash },
           tokenAddress: tokenAddress as Address,
           recipient: recipient as Address,
-          amountPerSecond: amountPerSecond.toString(),
+          amountPerSecond: aps.toString(),
           initialAmount: initialRaw.toString(),
           maxAmount: maxRaw.toString(),
           startTime: now,
           ratePerPeriod: rate,
-          ratePeriod,
+          ratePeriod: rateUnit,
         },
       }
       saveDelegation(stored)
@@ -208,9 +254,11 @@ export default function CreateStream() {
     setBeneficiaryName('')
     setRecipient('')
     setRate('')
-    setRatePeriod('monthly')
+    setRateUnit('month')
+    setBoundMode('unbounded')
+    setBudgetAmount('')
+    setEndDate('')
     setInitialAmount('0')
-    setMaxAmount('')
     setError(null)
   }
 
@@ -218,6 +266,7 @@ export default function CreateStream() {
     const httpUri = signed.meta.agreement && !signed.meta.agreement.uri.startsWith('ipfs://local-')
       ? ipfsToHttp(signed.meta.agreement.uri)
       : undefined
+    const unbounded = signed.meta.maxAmount === MAX_UINT256.toString()
     return (
       <div className="rise max-w-2xl">
         <Card className="p-6">
@@ -234,7 +283,7 @@ export default function CreateStream() {
           <div className="mt-5 rounded-xl bg-raised ring-1 ring-line divide-y divide-line">
             <Row label="Beneficiary"><Payee logo={((signed.meta.recipient ?? signed.delegation.delegate).slice(2, 4)).toUpperCase()} tint="#22D3EE" name={signed.meta.label} addr={short(signed.meta.recipient ?? signed.delegation.delegate)} size={32} /></Row>
             <Row label="Pay rate"><span className="font-mono font-semibold text-ink">{signed.meta.ratePerPeriod} USDC / {signed.meta.ratePeriod}</span></Row>
-            <Row label="Total budget"><span className="font-mono text-ink">{maxAmount} USDC</span></Row>
+            <Row label="Total budget"><span className="font-mono text-ink">{unbounded ? 'Unlimited' : `${trimAmount(formatUnits(BigInt(signed.meta.maxAmount ?? '0'), decimals))} USDC`}</span></Row>
             <Row label="Contract hash"><Mono className="text-xs text-dim">{short(signed.meta.agreement!.termsHash)}</Mono></Row>
           </div>
 
@@ -275,26 +324,58 @@ export default function CreateStream() {
             {recipient && !recipientValid && <p className="text-xs text-danger mt-1">Invalid address</p>}
           </Field>
 
-          <div className="grid grid-cols-[1fr_120px] gap-4">
-            <Field label="Pay rate" hint="How fast the balance accrues.">
+          <Field label="Pay rate" hint="The flow is the same money — only the scale changes. Switch the unit to see it re-expressed.">
+            <div className="grid grid-cols-[1fr_120px] gap-3">
               <div className="relative">
                 <input type="number" placeholder="1000" value={rate} onChange={(e) => setRate(e.target.value)} min={0} step="any" className="pr-16" />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">{tokenSymbol}</span>
               </div>
-            </Field>
-            <Field label="Per">
-              <select value={ratePeriod} onChange={(e) => setRatePeriod(e.target.value as PeriodType)}>
-                {PERIODS.map((p) => <option key={p} value={p}>{p[0].toUpperCase() + p.slice(1)}</option>)}
+              <select value={rateUnit} onChange={(e) => changeUnit(e.target.value as RateUnitKey)}>
+                {RATE_UNITS.map((u) => <option key={u.key} value={u.key}>per {u.label.toLowerCase()}</option>)}
               </select>
-            </Field>
-          </div>
-
-          <Field label="Total budget" hint="The most that will ever be paid out — the stream stops here. Required, and must be ≥ the upfront amount.">
-            <div className="relative">
-              <input type="number" placeholder="12000" value={maxAmount} onChange={(e) => setMaxAmount(e.target.value)} min={0} step="any" className="pr-16" />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">{tokenSymbol}</span>
             </div>
-            {capBelowInitial && <p className="text-xs text-danger mt-1">Total budget must be ≥ the upfront amount.</p>}
+            {preview && (
+              <p className="text-[11px] text-faint font-mono mt-2">
+                ≈ {preview.perSecond} {tokenSymbol}/s · {trimAmount(preview.perDay)}/day · {trimAmount(preview.perMonth)}/month
+              </p>
+            )}
+          </Field>
+
+          <Field label="Limit" hint="By default the stream runs at its rate until you revoke it. Cap the total or set an end date if you want it to stop on its own.">
+            <div className="flex items-center gap-2">
+              {BOUND_MODES.map((m) => (
+                <button
+                  key={m.key}
+                  type="button"
+                  onClick={() => setBoundMode(m.key)}
+                  className={`flex-1 h-11 rounded-xl text-sm font-medium transition ${boundMode === m.key ? 'bg-raised text-ink ring-1 ring-line2' : 'text-dim hover:text-ink'}`}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+
+            {boundMode === 'budget' && (
+              <div className="mt-3">
+                <div className="relative">
+                  <input type="number" placeholder="12000" value={budgetAmount} onChange={(e) => setBudgetAmount(e.target.value)} min={0} step="any" className="pr-16" />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">{tokenSymbol}</span>
+                </div>
+                {budgetBelowInitial && <p className="text-xs text-danger mt-1">Total budget must be ≥ the upfront amount.</p>}
+                {budgetValid && preview?.lasts && (
+                  <p className="text-[11px] text-pending mt-2">At this rate the budget lasts ~{preview.lasts} — you'll need to sign a new stream after that to keep paying.</p>
+                )}
+              </div>
+            )}
+
+            {boundMode === 'enddate' && (
+              <div className="mt-3">
+                <input type="datetime-local" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+                {endValid && preview?.budgetStr && (
+                  <p className="text-[11px] text-faint mt-2 flex items-center gap-1"><IconCal size={11} /> Total paid by then ≈ {preview.budgetStr} {tokenSymbol} — that becomes the on-chain cap.</p>
+                )}
+              </div>
+            )}
           </Field>
 
           <Field label="Upfront amount" hint="Paid immediately at start (e.g. a signing advance). Optional — defaults to 0.">
@@ -349,24 +430,33 @@ export default function CreateStream() {
             <div className="rounded-xl bg-raised ring-1 ring-line p-3">
               <div className="text-faint text-xs">Accrues</div>
               <div className="font-mono font-bold text-ink tnum mt-0.5" style={{ fontSize: 22 }}>
-                {rate} <span className="text-dim text-sm font-semibold">{tokenSymbol} / {ratePeriod.replace('ly', '')}</span>
+                {rate} <span className="text-dim text-sm font-semibold">{tokenSymbol} / {rateUnit}</span>
               </div>
-              <div className="text-faint text-[11px] mt-1 font-mono">≈ {preview.amountPerSecond} {tokenSymbol}/s</div>
+              <div className="text-faint text-[11px] mt-1 font-mono">≈ {preview.perSecond} {tokenSymbol}/s</div>
             </div>
-            <PreviewRow label={<span className="flex items-center gap-1"><IconLock size={12} /> After one {ratePeriod.replace('ly', '')}</span>}>
-              <span className="font-mono text-ink">{preview.afterOnePeriod} {tokenSymbol}</span>
+            <PreviewRow label={<span className="flex items-center gap-1"><IconLock size={12} /> After one {rateUnit}</span>}>
+              <span className="font-mono text-ink">{trimAmount(preview.afterOne)} {tokenSymbol}</span>
               <span className="text-faint text-[11px] block">claimable, accumulating</span>
             </PreviewRow>
             <PreviewRow label="Total budget">
-              <span className="font-mono text-ink">{maxAmount} {tokenSymbol}</span>
-              {preview.daysToCap > 0 && <span className="text-faint text-[11px] block">reached in ~{preview.daysToCap} d</span>}
+              {preview.unbounded ? (
+                <>
+                  <span className="font-mono text-ink">Unlimited</span>
+                  <span className="text-faint text-[11px] block">runs until revoked</span>
+                </>
+              ) : (
+                <>
+                  <span className="font-mono text-ink">{preview.budgetStr} {tokenSymbol}</span>
+                  {preview.lasts && <span className="text-faint text-[11px] block">lasts ~{preview.lasts}</span>}
+                </>
+              )}
             </PreviewRow>
             <div className="pt-3 border-t border-line">
               <p className="text-[11px] text-faint leading-relaxed">Unclaimed balance keeps accruing — if the beneficiary can't claim for a while, nothing is forfeited. The <span className="text-dim">erc20Streaming</span> caveat caps every claim on-chain.</p>
             </div>
           </div>
         ) : (
-          <p className="mt-6 text-sm text-dim leading-relaxed">Fill in a rate, a cap and a valid token to preview the stream that gets pinned to IPFS and bound to your signature.</p>
+          <p className="mt-6 text-sm text-dim leading-relaxed">Fill in a pay rate and a valid token to preview the stream that gets pinned to IPFS and bound to your signature.</p>
         )}
 
         {preview && (
