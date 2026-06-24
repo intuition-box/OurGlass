@@ -1,22 +1,96 @@
 import { useState, type ComponentType } from 'react'
 import Home from './pages/Home'
 import CreateDelegation from './pages/CreateDelegation'
+import CreateStream from './pages/CreateStream'
 import ImportDelegation from './pages/ImportDelegation'
 import Charge from './pages/Charge'
-import { Logo } from './ui/components'
-import { IconGrid, IconPlus, IconBolt, IconLink } from './ui/icons'
+import { Logo, Card } from './ui/components'
+import { IconGrid, IconPlus, IconBolt, IconLink, IconRepeat, IconLock, IconArrowR } from './ui/icons'
 
 type Page = 'home' | 'create' | 'import' | 'redeem'
+type CreateMode = 'choose' | 'subscription' | 'stream'
 
 const NAV: { key: Page; label: string; icon: ComponentType<{ size?: number }> }[] = [
   { key: 'home', label: 'Overview', icon: IconGrid },
-  { key: 'create', label: 'Subscribe', icon: IconPlus },
+  { key: 'create', label: 'Create', icon: IconPlus },
   { key: 'redeem', label: 'Charge', icon: IconBolt },
   { key: 'import', label: 'Import', icon: IconLink },
 ]
 
+function ChoiceCard({
+  icon: Icon,
+  tint,
+  title,
+  tagline,
+  example,
+  audience,
+  onSelect,
+}: {
+  icon: ComponentType<{ size?: number }>
+  tint: string
+  title: string
+  tagline: string
+  example: string
+  audience: string
+  onSelect: () => void
+}) {
+  return (
+    <Card hover onClick={onSelect} className="p-6 cursor-pointer flex flex-col gap-4 h-full">
+      <div className="flex items-center justify-between">
+        <div className="grid place-items-center w-10 h-10 rounded-xl" style={{ background: `${tint}22`, color: tint }}>
+          <Icon size={20} />
+        </div>
+        <IconArrowR size={18} className="text-faint" />
+      </div>
+      <div>
+        <h2 className="text-lg font-bold text-ink">{title}</h2>
+        <p className="text-sm text-dim mt-1">{tagline}</p>
+      </div>
+      <div className="rounded-xl bg-raised ring-1 ring-line p-3 text-[13px] text-dim leading-relaxed">{example}</div>
+      <div className="mt-auto flex items-center gap-1.5 text-[11px] font-medium text-faint uppercase tracking-wide">
+        <IconLock size={12} /> {audience}
+      </div>
+    </Card>
+  )
+}
+
+function CreateChoice({ onPick }: { onPick: (mode: CreateMode) => void }) {
+  return (
+    <div className="rise">
+      <h1 className="text-2xl font-extrabold tracking-tight text-ink">What are you setting up?</h1>
+      <p className="text-dim text-sm mt-1">Two ways to pay on a schedule. The difference is what happens to an unclaimed period.</p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-6">
+        <ChoiceCard
+          icon={IconBolt}
+          tint="#3B82F6"
+          title="Subscription"
+          tagline="A cap per period, claimed each period. Does not accumulate."
+          example="10 USDC/month. If the org doesn't charge January, those 10 are gone — February resets to 10 max. No debt piles up. Best for paying a service."
+          audience="DAO ↔ service"
+          onSelect={() => onPick('subscription')}
+        />
+        <ChoiceCard
+          icon={IconRepeat}
+          tint="#22D3EE"
+          title="Stream"
+          tagline="Accrues continuously, claimable anytime. Nothing is lost if you wait."
+          example="1000 USDC/month flowing by the second. After 15 days ~500 USDC are available. Don't claim for 2 months and ~2000 wait for you. Best for a salary."
+          audience="Contributor / payroll"
+          onSelect={() => onPick('stream')}
+        />
+      </div>
+    </div>
+  )
+}
+
 function AppInner() {
   const [page, setPage] = useState<Page>('home')
+  const [createMode, setCreateMode] = useState<CreateMode>('choose')
+
+  function navigate(key: Page) {
+    if (key === 'create') setCreateMode('choose')
+    setPage(key)
+  }
 
   return (
     <div className="min-h-screen">
@@ -30,7 +104,7 @@ function AppInner() {
               return (
                 <button
                   key={key}
-                  onClick={() => setPage(key)}
+                  onClick={() => navigate(key)}
                   className={`group flex items-center gap-3 rounded-xl px-3 h-10 text-sm font-medium transition-colors ${
                     active ? 'glass-soft text-ink ring-1 ring-line2' : 'text-dim hover:text-ink hover:bg-raised'
                   }`}
@@ -54,8 +128,10 @@ function AppInner() {
 
         {/* Content */}
         <main className="app-scroll overflow-y-auto rise" style={{ maxHeight: 'calc(100vh - 48px)' }}>
-          {page === 'home' && <Home onNavigate={setPage} />}
-          {page === 'create' && <CreateDelegation />}
+          {page === 'home' && <Home onNavigate={navigate} />}
+          {page === 'create' && createMode === 'choose' && <CreateChoice onPick={setCreateMode} />}
+          {page === 'create' && createMode === 'subscription' && <CreateDelegation />}
+          {page === 'create' && createMode === 'stream' && <CreateStream />}
           {page === 'import' && <ImportDelegation />}
           {page === 'redeem' && <Charge />}
         </main>
