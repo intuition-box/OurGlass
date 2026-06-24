@@ -149,6 +149,86 @@ describe('exact total over a long cycle — the vesting guarantee', () => {
   })
 })
 
+describe('no cent lost — the cap delivers the exact total whatever the rate rounding', () => {
+  // Awkward totals/durations where total is NOT divisible by the duration.
+  const cases: [string, number][] = [
+    ['100000', 4 * YEAR],
+    ['12345.67', 3 * YEAR],
+    ['500', 2 * YEAR],
+    ['7777.777777', YEAR + 12345],
+    ['250000', 18 * MONTH],
+  ]
+
+  test('maxAmount = total ⇒ eventual claimable is exactly total, to the wei', () => {
+    for (const [amount, duration] of cases) {
+      const total = usdc(amount)
+      const aps = total / BigInt(duration) // floor: streams a touch slower than the target
+      // total is recovered exactly once the linear term fills the cap
+      expect(available(aps, 0n, total, 0, 50 * YEAR)).toBe(total)
+      // and is never exceeded on the way there
+      for (let t = 0; t <= duration; t += Math.floor(duration / 5)) {
+        expect(available(aps, 0n, total, 0, t)).toBeLessThanOrEqual(total)
+      }
+    }
+  })
+
+  test('the remainder is delivered (not lost), just slightly after the nominal end', () => {
+    const total = usdc('100000')
+    const duration = 4 * YEAR
+    const aps = total / BigInt(duration) // floor
+    const atDeadline = available(aps, 0n, total, 0, duration)
+    const remainder = total - atDeadline // not yet delivered at the deadline...
+    expect(remainder).toBeGreaterThan(0n)
+    // ...but fully delivered a bit later, total intact
+    const lateBy = Number((remainder + aps - 1n) / aps) // seconds to finish filling
+    expect(available(aps, 0n, total, 0, duration + lateBy)).toBe(total)
+    expect(lateBy).toBeLessThan(86_400) // under a day of slop on a 4-year vest
+  })
+})
+
+describe('exact-to-the-second: front-load the remainder as initialAmount', () => {
+  test('available equals the total EXACTLY at the deadline second, never a cent off', () => {
+    const cases: [string, number][] = [
+      ['100000', 4 * YEAR],
+      ['12345.67', 3 * YEAR],
+      ['999.999999', 17 * MONTH],
+    ]
+    for (const [amount, duration] of cases) {
+      const total = usdc(amount)
+      const aps = total / BigInt(duration) // floor
+      const initial = total - aps * BigInt(duration) // the remainder, paid up front
+      expect(initial).toBeGreaterThanOrEqual(0n)
+      expect(initial).toBeLessThan(BigInt(duration)) // remainder is always < one duration of wei
+      // lands on the total exactly at the deadline, and stays capped
+      expect(available(aps, initial, total, 0, duration)).toBe(total)
+      expect(available(aps, initial, total, 0, duration + 10 ** 6)).toBe(total)
+      // never over the total at any earlier point
+      for (let t = 0; t <= duration; t += Math.floor(duration / 7)) {
+        expect(available(aps, initial, total, 0, t)).toBeLessThanOrEqual(total)
+      }
+    }
+  })
+})
+
+describe('minimum streamable rate, and the front-load rescue', () => {
+  test('a total below one wei/second over the duration floors the rate to 0 — it cannot stream', () => {
+    // USDC needs total >= duration (in wei): e.g. ~126 USDC over 4 years, ~63 over 2.
+    const total = usdc('1') // 1 USDC = 1e6 wei
+    const duration = 2 * YEAR // 63_115_200 s > 1e6
+    const aps = total / BigInt(duration)
+    expect(aps).toBe(0n)
+    expect(available(aps, 0n, total, 0, 100 * YEAR)).toBe(0n) // cap-only delivers nothing
+  })
+
+  test('front-loading the remainder delivers the exact total even when the rate rounds to 0', () => {
+    const total = usdc('1')
+    const duration = 2 * YEAR
+    const aps = total / BigInt(duration) // 0
+    const initial = total - aps * BigInt(duration) // = total, paid up front
+    expect(available(aps, initial, total, 0, 0)).toBe(total)
+  })
+})
+
 describe('no drift over very large durations', () => {
   test('100-year stream accrues exactly aps × elapsed (capped), bit-for-bit', () => {
     const aps = rateToPerSecond('5000', 'month', DP6)
