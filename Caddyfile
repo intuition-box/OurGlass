@@ -15,6 +15,17 @@
 		-X-Frame-Options
 	}
 
+	# Content-addressed build assets (hashed filenames) never change for a given
+	# URL — cache them aggressively.
+	@assets path /assets/*
+	header @assets Cache-Control "public, max-age=31536000, immutable"
+
+	# index.html, the SPA fallback and manifest.json must always revalidate, so a
+	# new deploy is picked up immediately instead of being served from a stale
+	# browser/Safe cache (the old hashed bundle would otherwise stay referenced).
+	@revalidate not path /assets/*
+	header @revalidate Cache-Control "no-cache"
+
 	# Answer CORS preflight without hitting the SPA fallback.
 	@options method OPTIONS
 	respond @options 204
