@@ -65,7 +65,7 @@ function CreateChoice({ onPick }: { onPick: (mode: CreateMode) => void }) {
           tint="#3B82F6"
           title="Subscription"
           tagline="A cap per period, claimed each period. Does not accumulate."
-          example="10 USDC/month. If the org doesn't charge January, those 10 are gone — February resets to 10 max. No debt piles up. Best for paying a service."
+          example="10 USDC/month. If the org doesn't charge January, those 10 are gone. February resets to 10 max. No debt piles up. Best for paying a service."
           audience="DAO ↔ service"
           onSelect={() => onPick('subscription')}
         />
