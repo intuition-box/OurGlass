@@ -147,3 +147,31 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator {
 @media (prefers-reduced-motion: no-preference) {
   .rise { animation: rise 0.4s cubic-bezier(0.2, 0.7, 0.2, 1); }
 }
+
+/* verify-before-sign modal: copy in Safe → paste in verifier → verified, on loop */
+@keyframes og-copy-ping {
+  0% { box-shadow: 0 0 0 0 var(--accent-line); }
+  12% { box-shadow: 0 0 0 6px rgba(88, 230, 184, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(88, 230, 184, 0); }
+}
+@keyframes og-doc-fly {
+  0%, 12% { left: 14%; top: 62%; opacity: 0; transform: scale(0.6); }
+  20% { opacity: 1; transform: scale(1); }
+  52% { left: 64%; top: 40%; opacity: 1; transform: scale(1); }
+  60%, 100% { left: 64%; top: 40%; opacity: 0; transform: scale(0.7); }
+}
+@keyframes og-check-pop {
+  0%, 55% { opacity: 0; transform: scale(0.4); }
+  63% { opacity: 1; transform: scale(1.2); }
+  70% { transform: scale(1); }
+  90% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1); }
+}
+.og-copy-ping { animation: og-copy-ping 5s ease-out infinite; }
+.og-doc-fly { animation: og-doc-fly 5s ease-in-out infinite; }
+.og-check-pop { display: inline-grid; animation: og-check-pop 5s ease infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .og-copy-ping { animation: none; }
+  .og-doc-fly { animation: none; opacity: 0; }
+  .og-check-pop { animation: none; opacity: 1; transform: none; }
+}

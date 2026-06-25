@@ -19,6 +19,7 @@ import { periodToSeconds, periodLabel, type PeriodType } from '../lib/enforcers'
 import { getEnvironment } from '../lib/environment'
 import { saveDelegation, type StoredDelegation } from '../lib/storage'
 import { Card, Btn, GaslessButton, USDC, Mono, CopyChip, Payee, StatusBadge } from '../ui/components'
+import { VerifySignModal } from '../ui/VerifySignModal'
 import { IconCube, IconLock, IconCheck, IconExt, IconHash, IconCal } from '../ui/icons'
 import { findChain, USDC_ADDRESS } from '../config/supported-chains'
 
@@ -68,6 +69,7 @@ export default function CreateDelegation() {
   const [expiryDate, setExpiryDate] = useState('')
 
   const [signing, setSigning] = useState(false)
+  const [showVerifyModal, setShowVerifyModal] = useState(false)
   const [step, setStep] = useState<SignStep>('idle')
   const [pinnedCid, setPinnedCid] = useState<string | null>(null)
   const [signed, setSigned] = useState<StoredDelegation | null>(null)
@@ -377,7 +379,7 @@ export default function CreateDelegation() {
                 <div className="flex items-center gap-2 text-xs text-dim">
                   <IconCube size={14} style={{ color: 'var(--accent)' }} /> Pinned to IPFS, hash bound to your signature.
                 </div>
-                <GaslessButton size="lg" onClick={handleSign} disabled={!canSign} className="w-full">
+                <GaslessButton size="lg" onClick={() => setShowVerifyModal(true)} disabled={!canSign} className="w-full">
                   Pin & sign
                 </GaslessButton>
                 <p className="text-[11px] text-faint text-center">1 signature · </p>
@@ -397,6 +399,15 @@ export default function CreateDelegation() {
           </div>
         )}
       </Card>
+
+      <VerifySignModal
+        open={showVerifyModal}
+        onCancel={() => setShowVerifyModal(false)}
+        onConfirm={() => {
+          setShowVerifyModal(false)
+          void handleSign()
+        }}
+      />
     </div>
   )
 }
