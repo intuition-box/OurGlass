@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSafeAppsSDK } from '@safe-global/safe-apps-react-sdk'
 import { createPublicClient, http, isAddress, erc20Abi, formatUnits, BaseError, type Address } from 'viem'
-import { baseSepolia, base, sepolia } from 'viem/chains'
+import { mainnet, baseSepolia, base, sepolia } from 'viem/chains'
 import { getDelegations, type StoredDelegation } from '../lib/storage'
 import { streamedAvailable } from '../lib/streamTerms'
 import { buildRedeemTx } from '../lib/redeemDirect'
@@ -10,7 +10,7 @@ import { IconBolt, IconCheck, IconLock, IconArrowL, IconRepeat } from '../ui/ico
 
 const isStream = (d: StoredDelegation) => d.meta.scopeType === 'erc20Streaming'
 
-const chains: Record<number, typeof baseSepolia | typeof base | typeof sepolia> = { 84532: baseSepolia, 11155111: sepolia, 8453: base }
+const chains: Record<number, typeof mainnet | typeof baseSepolia | typeof base | typeof sepolia> = { 1: mainnet, 84532: baseSepolia, 11155111: sepolia, 8453: base }
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
 const tintFor = (addr: string) => {
   const palette = ['#3B82F6', '#22D3EE', '#8B5CF6', '#34D399', '#FB7185', '#FBBF24']

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useSafeAppsSDK } from '@safe-global/safe-apps-react-sdk'
 import { createPublicClient, http, type Address } from 'viem'
-import { baseSepolia, base, sepolia } from 'viem/chains'
+import { mainnet, baseSepolia, base, sepolia } from 'viem/chains'
 import { DeleGatorModuleFactoryABI, SafeABI } from '../config/abis'
 import { getAddresses } from '../config/addresses'
 import { buildModuleInstallTxs, DEFAULT_SALT } from '../lib/module'
@@ -11,7 +11,8 @@ import { SubscriptionDetail } from './SubscriptionDetail'
 import { Card, Btn, StatusBadge, Payee, type Status } from '../ui/components'
 import { IconChip, IconCheck, IconPlus, IconRepeat, IconLock, IconCube, IconExt, IconAlert, IconArrowR } from '../ui/icons'
 
-const chains: Record<number, typeof baseSepolia | typeof base | typeof sepolia> = {
+const chains: Record<number, typeof mainnet | typeof baseSepolia | typeof base | typeof sepolia> = {
+  1: mainnet,
   84532: baseSepolia,
   11155111: sepolia,
   8453: base,

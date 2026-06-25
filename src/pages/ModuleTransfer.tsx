@@ -12,7 +12,7 @@ import {
   encodePacked,
   pad,
 } from 'viem'
-import { base, baseSepolia, sepolia } from 'viem/chains'
+import { mainnet, base, baseSepolia, sepolia } from 'viem/chains'
 import { DeleGatorModuleFactoryABI } from '../config/abis'
 import { getAddresses } from '../config/addresses'
 import { DEFAULT_SALT } from '../lib/module'
@@ -20,6 +20,7 @@ import { Card, Btn, Mono, CopyChip } from '../ui/components'
 import { IconWallet, IconCheck, IconAlert, IconRepeat } from '../ui/icons'
 
 const KNOWN_TOKENS: { address: Address; symbol: string; decimals: number }[] = [
+  { address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', symbol: 'USDC', decimals: 6 }, // Ethereum
   { address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', symbol: 'USDC', decimals: 6 }, // Base
   { address: '0x036CbD53842c5426634e7929541eC2318f3dCF7e', symbol: 'USDC', decimals: 6 }, // Base Sepolia
   { address: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238', symbol: 'USDC', decimals: 6 }, // Ethereum Sepolia
@@ -35,7 +36,7 @@ const ERC20_ABI = parseAbi([
 const SINGLE_DEFAULT_MODE: Hex = pad('0x00', { size: 32 })
 const MODULE_EXECUTE_ABI = parseAbi(['function execute(bytes32 mode, bytes calldata executionCalldata) payable'])
 
-const chains: Record<number, typeof baseSepolia | typeof base | typeof sepolia> = { 84532: baseSepolia, 11155111: sepolia, 8453: base }
+const chains: Record<number, typeof mainnet | typeof baseSepolia | typeof base | typeof sepolia> = { 1: mainnet, 84532: baseSepolia, 11155111: sepolia, 8453: base }
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
 
 interface TokenBalance {

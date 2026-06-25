@@ -7,6 +7,7 @@ import { IconShield, IconCheck, IconX, IconExt, IconCube, IconDoc } from '../ui/
 // can be hosted anywhere (incl. IPFS) and read even if the main app is down.
 
 const CHAINS = [
+  { id: 1, name: 'Ethereum', explorer: 'https://etherscan.io' },
   { id: 84532, name: 'Base Sepolia', explorer: 'https://sepolia.basescan.org' },
   { id: 11155111, name: 'Ethereum Sepolia', explorer: 'https://sepolia.etherscan.io' },
   { id: 8453, name: 'Base', explorer: 'https://basescan.org' },

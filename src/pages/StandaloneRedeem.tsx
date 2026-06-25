@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import { createPublicClient, http, isAddress, erc20Abi, type Address, type PublicClient, type WalletClient } from 'viem'
-import { baseSepolia, base, sepolia } from 'viem/chains'
+import { mainnet, baseSepolia, base, sepolia } from 'viem/chains'
 import { useAccount, useConnect, useDisconnect, useWalletClient } from 'wagmi'
 import { importDelegationsJson, type StoredDelegation } from '../lib/storage'
 import { ipfsToHttp } from '../lib/subscriptionTerms'
@@ -8,13 +8,14 @@ import { redeemSubscriptionDirect } from '../lib/redeemDirect'
 import { Logo, Card, Btn, StatusBadge, Payee, Mono } from '../ui/components'
 import { IconCheck, IconExt, IconAlert, IconLock, IconDoc, IconCube, IconArrowL } from '../ui/icons'
 
-const CHAINS: { id: number; label: string; chain: typeof baseSepolia | typeof base | typeof sepolia }[] = [
+const CHAINS: { id: number; label: string; chain: typeof mainnet | typeof baseSepolia | typeof base | typeof sepolia }[] = [
+  { id: 1, label: 'Ethereum', chain: mainnet },
   { id: 84532, label: 'Base Sepolia', chain: baseSepolia },
   { id: 11155111, label: 'Ethereum Sepolia', chain: sepolia },
   { id: 8453, label: 'Base', chain: base },
 ]
 const explorerTx = (id: number, h: string) =>
-  id === 84532 ? `https://sepolia.basescan.org/tx/${h}` : id === 11155111 ? `https://sepolia.etherscan.io/tx/${h}` : `https://basescan.org/tx/${h}`
+  id === 1 ? `https://etherscan.io/tx/${h}` : id === 84532 ? `https://sepolia.basescan.org/tx/${h}` : id === 11155111 ? `https://sepolia.etherscan.io/tx/${h}` : `https://basescan.org/tx/${h}`
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
 const tintFor = (addr: string) => {
   const palette = ['#3B82F6', '#22D3EE', '#8B5CF6', '#34D399', '#FB7185', '#FBBF24']

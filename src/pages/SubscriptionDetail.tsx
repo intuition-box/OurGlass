@@ -7,7 +7,7 @@ import { Card, Btn, StatusBadge, Payee, Mono, CopyChip, type Status } from '../u
 import { IconX, IconStop, IconCube, IconExt, IconLock, IconCal, IconRepeat } from '../ui/icons'
 
 const chainName = (id: number) =>
-  id === 84532 ? 'Base Sepolia' : id === 11155111 ? 'Ethereum Sepolia' : id === 8453 ? 'Base' : `Chain ${id}`
+  id === 1 ? 'Ethereum' : id === 84532 ? 'Base Sepolia' : id === 11155111 ? 'Ethereum Sepolia' : id === 8453 ? 'Base' : `Chain ${id}`
 const statusOf = (s: StoredDelegation['meta']['status']): Status =>
   s === 'signed' ? 'active' : s === 'revoked' ? 'revoked' : 'pending'
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
