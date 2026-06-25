@@ -486,7 +486,7 @@ export default function CreateStream() {
           }
         >
           {boundMode === 'hardcap' && (
-            <div className={`mt-1 grid grid-cols-3 rounded-xl ring-1 divide-x divide-line ${errs.cap ? 'ring-danger' : 'ring-line'}`}>
+            <div className={`mt-1 grid grid-cols-[1fr_1.35fr_1fr] rounded-xl ring-1 divide-x divide-line ${errs.cap ? 'ring-danger' : 'ring-line'}`}>
               <div className="p-3">
                 <div className="text-[11px] text-faint mb-1.5 text-center uppercase tracking-wide">End date</div>
                 <input type="date" value={capDurationSeconds > 0 ? toDateInput(now + capDurationSeconds) : ''} onChange={(e) => onEndDateChange(e.target.value)} onBlur={() => setTouchedCap(true)} className="w-full" />
@@ -494,8 +494,8 @@ export default function CreateStream() {
               <div className="p-3">
                 <div className="text-[11px] text-faint mb-1.5 text-center uppercase tracking-wide">Duration</div>
                 <div className="flex gap-1.5">
-                  <input type="text" inputMode="decimal" placeholder="3" value={capDurationN} onChange={(e) => setCapDurationN(clampDur(dec(e.target.value)))} onBlur={() => setTouchedCap(true)} className="flex-1 min-w-0" />
-                  <select value={capDurationUnit} onChange={(e) => setCapDurationUnit(e.target.value)} className="w-16 shrink-0 px-1 truncate">
+                  <input type="text" inputMode="decimal" placeholder="3" value={capDurationN} onChange={(e) => setCapDurationN(clampDur(dec(e.target.value)))} onBlur={() => setTouchedCap(true)} className="flex-1 min-w-0 w-0" />
+                  <select value={capDurationUnit} onChange={(e) => setCapDurationUnit(e.target.value)} className="flex-1 min-w-0 w-0 px-1 truncate">
                     {DURATION_UNITS.map((u) => <option key={u.key} value={u.key}>{u.label}</option>)}
                   </select>
                 </div>
