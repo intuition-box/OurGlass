@@ -4,6 +4,7 @@ import { createPublicClient, http, isAddress, erc20Abi, formatUnits, BaseError, 
 import { getDelegations, type StoredDelegation } from '../lib/storage'
 import { buildRedeemTx } from '../lib/redeemDirect'
 import { useClaimState, type ClaimView } from '../hooks/useClaimState'
+import { useClaimTotals, type ClaimTotals } from '../hooks/useClaimTotals'
 import { Card, Btn, StatusBadge, Payee, Mono, USDC } from '../ui/components'
 import { IconBolt, IconCheck, IconLock, IconArrowL, IconRepeat } from '../ui/icons'
 import { findChain, rpcUrl } from '../config/supported-chains'
@@ -75,6 +76,46 @@ function ClaimProgress({ view, symbol }: { view: ClaimView; symbol: string }) {
   )
 }
 
+// Sum a token-grouped figure across all groups into a display number. Amounts are
+// only meaningfully summed within a token, but the redeem console is USDC-centric
+// so a single headline figure is the useful aggregate.
+function sumDisplay(totals: ClaimTotals, field: 'claimable' | 'claimed'): number {
+  return totals.groups.reduce((sum, g) => sum + Number(formatUnits(g[field], g.decimals)), 0)
+}
+
+const fmtNum = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+function StatsRow({ totals }: { totals: ClaimTotals }) {
+  const active = totals.streams + totals.subscriptions
+  return (
+    <div className="grid grid-cols-3 gap-3 mb-5">
+      <Card className="p-4">
+        <div className="flex items-center gap-2 text-[11px] text-faint uppercase tracking-wide">
+          <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: '#22D3EE' }} /> Claimable now
+        </div>
+        <div className="mt-2 font-mono font-bold text-ink tnum" style={{ fontSize: 22 }}>
+          {totals.loading ? '—' : fmtNum(sumDisplay(totals, 'claimable'))} <span className="text-dim text-xs font-semibold">USDC</span>
+        </div>
+      </Card>
+      <Card className="p-4">
+        <div className="flex items-center gap-2 text-[11px] text-faint uppercase tracking-wide">
+          <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: 'var(--accent)' }} /> Claimed to date
+        </div>
+        <div className="mt-2 font-mono font-bold text-ink tnum" style={{ fontSize: 22 }}>
+          {totals.loading ? '—' : fmtNum(sumDisplay(totals, 'claimed'))} <span className="text-dim text-xs font-semibold">USDC</span>
+        </div>
+      </Card>
+      <Card className="p-4">
+        <div className="flex items-center gap-2 text-[11px] text-faint uppercase tracking-wide">
+          <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: '#6b7280' }} /> Active
+        </div>
+        <div className="mt-2 font-mono font-bold text-ink tnum" style={{ fontSize: 22 }}>{totals.loading ? '—' : active}</div>
+        <div className="text-[11px] text-faint mt-1">{totals.streams} stream{totals.streams === 1 ? '' : 's'} · {totals.subscriptions} sub{totals.subscriptions === 1 ? '' : 's'}</div>
+      </Card>
+    </div>
+  )
+}
+
 export default function Charge() {
   const { sdk, safe } = useSafeAppsSDK()
   const [selected, setSelected] = useState<StoredDelegation | null>(null)
@@ -101,6 +142,10 @@ export default function Charge() {
       ),
     [safe.safeAddress],
   )
+
+  // Aggregate stats over the chargeable delegations (list view only — skip the
+  // on-chain reads while a single delegation is open).
+  const totals = useClaimTotals(selected ? [] : subs)
 
   function pick(d: StoredDelegation) {
     setSelected(d)
@@ -269,7 +314,9 @@ export default function Charge() {
           <p className="text-sm text-dim mt-1 max-w-sm mx-auto">Subscriptions where this Safe ({short(safe.safeAddress)}) is the payee appear here, ready to charge every period.</p>
         </Card>
       ) : (
-        <div className="space-y-3 mt-5">
+        <div className="mt-5">
+          <StatsRow totals={totals} />
+          <div className="space-y-3">
           {subs.map((d) => {
             const payeeAddr = d.meta.recipient ?? d.delegation.delegate
             return (
@@ -289,6 +336,7 @@ export default function Charge() {
               </Card>
             )
           })}
+          </div>
         </div>
       )}
     </div>
