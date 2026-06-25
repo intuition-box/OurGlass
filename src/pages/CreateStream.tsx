@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSafeAppsSDK } from '@safe-global/safe-apps-react-sdk'
-import { createPublicClient, http, isAddress, parseUnits, formatUnits, type Address, type Hex } from 'viem'
+import { createPublicClient, http, isAddress, erc20Abi, parseUnits, formatUnits, type Address, type Hex } from 'viem'
 import { createDelegation } from '@metamask/smart-accounts-kit'
 import { DeleGatorModuleFactoryABI } from '../config/abis'
 import { getAddresses } from '../config/addresses'
@@ -23,9 +23,11 @@ import { IconCube, IconLock, IconCheck, IconExt, IconHash, IconCal } from '../ui
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
 const trimAmount = (s: string) => (s.includes('.') ? s.replace(/\.?0+$/, '') : s)
 const trimNum = (n: number) => (Number.isFinite(n) ? String(Math.round(n * 100) / 100) : '')
-// Normalise a typed amount to a dot decimal so the field reads the same as the
-// preview (point everywhere), while still accepting a comma the user might type.
-const dec = (v: string) => v.replace(',', '.')
+// Lock an amount field to a dot decimal: comma → dot, strip anything that isn't
+// a digit or a dot (point everywhere, no letters/symbols).
+const dec = (v: string) => v.replace(',', '.').replace(/[^\d.]/g, '')
+// Duration is a positive number capped at 999 (per unit).
+const clampDur = (v: string) => { const n = parseFloat(v); return Number.isFinite(n) && n > 999 ? '999' : v }
 const MONTH = 2_592_000
 
 // Three display scales for the rate table. Same per-second flow, shown at each
@@ -59,10 +61,13 @@ export default function CreateStream() {
   // Block 2 — Payment details
   const [useCustomToken, setUseCustomToken] = useState(false)
   const [customToken, setCustomToken] = useState('')
-  const [customDecimals, setCustomDecimals] = useState(6)
+  const [tokenMeta, setTokenMeta] = useState<{ name: string; symbol: string; decimals: number } | null>(null)
+  const [tokenStatus, setTokenStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle')
   const [rateAmount, setRateAmount] = useState('')
   const [rateSeconds, setRateSeconds] = useState(MONTH)
   const [upfront, setUpfront] = useState('0')
+  const rateRef = useRef<HTMLInputElement>(null)
+  const [rateHint, setRateHint] = useState(false)
 
   // Block 3 — Security / limit
   const [boundMode, setBoundMode] = useState<BoundMode>('revocation')
@@ -82,10 +87,33 @@ export default function CreateStream() {
 
   const defaultUsdc = USDC_ADDRESS[safe.chainId]
   const tokenAddress = useCustomToken ? customToken : defaultUsdc
-  const decimals = useCustomToken ? customDecimals : 6
-  const tokenSymbol = useCustomToken ? 'tokens' : 'USDC'
+  const decimals = useCustomToken ? (tokenMeta?.decimals ?? 6) : 6
+  const tokenSymbol = useCustomToken ? (tokenMeta?.symbol ?? 'tokens') : 'USDC'
   const recipientValid = isAddress(recipient)
-  const tokenValid = !!tokenAddress && isAddress(tokenAddress)
+  const tokenValid = useCustomToken ? (isAddress(customToken) && tokenStatus === 'ok') : (!!tokenAddress && isAddress(tokenAddress))
+
+  // Resolve a custom token's name / symbol / decimals straight from the contract.
+  useEffect(() => {
+    if (!useCustomToken || !isAddress(customToken)) { setTokenMeta(null); setTokenStatus('idle'); return }
+    const chain = findChain(safe.chainId)
+    if (!chain) { setTokenStatus('error'); return }
+    const client = createPublicClient({ chain, transport: http() })
+    let cancelled = false
+    setTokenStatus('loading')
+    ;(async () => {
+      try {
+        const [d, symbol, name] = await Promise.all([
+          client.readContract({ address: customToken as Address, abi: erc20Abi, functionName: 'decimals' }),
+          client.readContract({ address: customToken as Address, abi: erc20Abi, functionName: 'symbol' }),
+          client.readContract({ address: customToken as Address, abi: erc20Abi, functionName: 'name' }),
+        ])
+        if (!cancelled) { setTokenMeta({ name, symbol, decimals: d }); setTokenStatus('ok') }
+      } catch {
+        if (!cancelled) { setTokenMeta(null); setTokenStatus('error') }
+      }
+    })()
+    return () => { cancelled = true }
+  }, [useCustomToken, customToken, safe.chainId])
 
   const fmt = (raw: bigint) => trimAmount(formatUnits(raw, decimals))
   const upfrontRaw = useMemo<bigint>(() => {
@@ -179,6 +207,16 @@ export default function CreateStream() {
   function onSignClick() {
     if (!ready) { setTouchedBene(true); setTouchedRate(true); setTouchedCap(true); return }
     handleSign()
+  }
+  // A hard cap is defined relative to the rate, so the rate must exist first.
+  function onLimitChange(mode: BoundMode) {
+    if (mode === 'hardcap' && !rateValid) {
+      setRateHint(true)
+      rateRef.current?.focus()
+      return
+    }
+    setRateHint(false)
+    setBoundMode(mode)
   }
 
   function resolveMaxRaw(): bigint {
@@ -311,6 +349,11 @@ export default function CreateStream() {
     setTouchedBene(false)
     setTouchedRate(false)
     setTouchedCap(false)
+    setRateHint(false)
+    setUseCustomToken(false)
+    setCustomToken('')
+    setTokenMeta(null)
+    setTokenStatus('idle')
   }
 
   if (signed) {
@@ -388,22 +431,28 @@ export default function CreateStream() {
           }
         >
           {useCustomToken && (
-            <div className="grid grid-cols-[1fr_88px] gap-2">
+            <div>
               <input type="text" placeholder="Token 0x…" value={customToken} onChange={(e) => setCustomToken(e.target.value)} />
-              <input type="number" placeholder="6" value={customDecimals} onChange={(e) => setCustomDecimals(parseInt(e.target.value) || 6)} min={0} max={24} />
+              {tokenStatus === 'loading' && <p className="text-xs text-faint mt-1">Resolving token…</p>}
+              {tokenStatus === 'ok' && tokenMeta && (
+                <p className="text-xs text-faint mt-1"><span className="text-ink font-semibold">{tokenMeta.symbol}</span> · {tokenMeta.name} · {tokenMeta.decimals} decimals</p>
+              )}
+              {tokenStatus === 'error' && customToken && <p className="text-xs text-danger mt-1">Not a readable ERC-20 on this chain.</p>}
             </div>
           )}
 
           <Field label="Pay rate" required missing={errs.rate}>
             <div className="grid grid-cols-3 gap-2">
-              {RATE_SCALES.map((s) => (
+              {RATE_SCALES.map((s, i) => (
                 <div key={s.key}>
                   <div className="text-[11px] text-faint mb-1">{s.label}</div>
                   <div className="relative">
                     <input
+                      ref={i === 0 ? rateRef : undefined}
                       type="text" inputMode="decimal" placeholder="0"
                       value={rateCellValue(s.seconds)}
                       onChange={(e) => onRateChange(s.seconds, e.target.value)}
+                      onFocus={(e) => { e.target.select(); setRateHint(false) }}
                       onBlur={() => setTouchedRate(true)}
                       className={`pr-12 ${errs.rate ? 'ring-1 ring-danger' : ''}`}
                     />
@@ -412,11 +461,12 @@ export default function CreateStream() {
                 </div>
               ))}
             </div>
+            {rateHint && <p className="text-xs text-pending mt-2">Set a pay rate first to fix a limit.</p>}
           </Field>
 
           <Field label="Upfront payment">
             <div className="relative">
-              <input type="text" inputMode="decimal" placeholder="0" value={upfront} onChange={(e) => setUpfront(dec(e.target.value))} className="pr-16" />
+              <input type="text" inputMode="decimal" placeholder="0" value={upfront} onChange={(e) => setUpfront(dec(e.target.value))} onFocus={(e) => e.target.select()} className="pr-16" />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">{tokenSymbol}</span>
             </div>
           </Field>
@@ -428,34 +478,34 @@ export default function CreateStream() {
           action={
             <Segmented
               value={boundMode}
-              onChange={setBoundMode}
+              onChange={onLimitChange}
               options={[{ key: 'revocation', label: 'Revocation only' }, { key: 'hardcap', label: 'Hard cap' }]}
             />
           }
         >
           {boundMode === 'hardcap' && (
-            <div className="grid grid-cols-3 gap-2">
-                <div>
-                  <div className="text-[11px] text-faint mb-1">End date</div>
-                  <input type="date" value={capDurationSeconds > 0 ? toDateInput(now + capDurationSeconds) : ''} onChange={(e) => onEndDateChange(e.target.value)} onBlur={() => setTouchedCap(true)} className={errs.cap ? 'ring-1 ring-danger' : ''} />
-                </div>
-                <div>
-                  <div className="text-[11px] text-faint mb-1">Duration</div>
-                  <div className="grid grid-cols-[1fr_auto] gap-1">
-                    <input type="text" inputMode="decimal" placeholder="3" value={capDurationN} onChange={(e) => setCapDurationN(dec(e.target.value))} onBlur={() => setTouchedCap(true)} className={errs.cap ? 'ring-1 ring-danger' : ''} />
-                    <select value={capDurationUnit} onChange={(e) => setCapDurationUnit(e.target.value)} className="w-auto">
-                      {DURATION_UNITS.map((u) => <option key={u.key} value={u.key}>{u.label}</option>)}
-                    </select>
-                  </div>
-                </div>
-                <div>
-                  <div className="text-[11px] text-faint mb-1">Total budget</div>
-                  <div className="relative">
-                    <input type="text" inputMode="decimal" placeholder="900" value={capTotalValue} onChange={(e) => onTotalChange(e.target.value)} onBlur={() => { setActiveTotal(null); setTouchedCap(true) }} className={`pr-12 ${errs.cap ? 'ring-1 ring-danger' : ''}`} />
-                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-faint">{tokenSymbol}</span>
-                  </div>
+            <div className={`mt-1 grid grid-cols-3 rounded-xl ring-1 divide-x divide-line ${errs.cap ? 'ring-danger' : 'ring-line'}`}>
+              <div className="p-3">
+                <div className="text-[11px] text-faint mb-1.5 text-center uppercase tracking-wide">End date</div>
+                <input type="date" value={capDurationSeconds > 0 ? toDateInput(now + capDurationSeconds) : ''} onChange={(e) => onEndDateChange(e.target.value)} onBlur={() => setTouchedCap(true)} className="w-full" />
+              </div>
+              <div className="p-3">
+                <div className="text-[11px] text-faint mb-1.5 text-center uppercase tracking-wide">Duration</div>
+                <div className="flex gap-1">
+                  <input type="text" inputMode="decimal" placeholder="3" value={capDurationN} onChange={(e) => setCapDurationN(clampDur(dec(e.target.value)))} onBlur={() => setTouchedCap(true)} className="w-full min-w-0" />
+                  <select value={capDurationUnit} onChange={(e) => setCapDurationUnit(e.target.value)} className="w-auto shrink-0">
+                    {DURATION_UNITS.map((u) => <option key={u.key} value={u.key}>{u.label}</option>)}
+                  </select>
                 </div>
               </div>
+              <div className="p-3">
+                <div className="text-[11px] text-faint mb-1.5 text-center uppercase tracking-wide">Total budget</div>
+                <div className="relative">
+                  <input type="text" inputMode="decimal" placeholder="900" value={capTotalValue} onChange={(e) => onTotalChange(e.target.value)} onBlur={() => { setActiveTotal(null); setTouchedCap(true) }} className="w-full pr-12" />
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-faint">{tokenSymbol}</span>
+                </div>
+              </div>
+            </div>
             )}
         </Block>
       </div>
@@ -494,7 +544,7 @@ export default function CreateStream() {
           <PreviewRow label="Upfront"><span className="font-mono text-ink">{trimAmount(upfront || '0')} {tokenSymbol}</span></PreviewRow>
 
           <PreviewRow label="Token">
-            <span className="text-ink text-xs">{tokenSymbol}</span>
+            <span className="text-ink text-xs">{tokenSymbol}{useCustomToken && tokenMeta?.name ? ` · ${tokenMeta.name}` : ''}</span>
             {tokenValid && <Mono className="text-[10px] text-faint block">{short(tokenAddress as string)}</Mono>}
           </PreviewRow>
 
@@ -552,7 +602,7 @@ function Block({ title, action, children }: { title: string; action?: React.Reac
   return (
     <Card className="p-5 space-y-4">
       <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-xs font-semibold text-faint uppercase tracking-wide"><IconCal size={14} /> {title}</div>
+        <div className="flex items-center gap-2 text-xs font-semibold text-faint uppercase tracking-wide"><span className="text-ink"><IconCal size={14} /></span> {title}</div>
         {action}
       </div>
       {children}
