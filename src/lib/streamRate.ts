@@ -37,27 +37,40 @@ export function unitSeconds(key: RateUnitKey): number {
   return u.seconds
 }
 
-/** Per-second accrual (raw wei) from a human rate over a unit. Integer division — never over-pays. */
+/**
+ * Per-second accrual (raw wei) from a human rate over a unit. Rounds UP (ceil) to
+ * the next whole wei/second so the flow is never BELOW the intended rate: the
+ * beneficiary is never shorted (and they pay the gas to claim, so a shortfall
+ * would be doubly unfair). Paired with maxAmount = the exact total, the cap still
+ * holds the total exactly — ceil just makes the stream reach the cap a hair early
+ * instead of late. Granularity is one wei/second (≈ 2.6 USDC/month for 6-decimal
+ * tokens, so very small USDC rates overshoot noticeably; negligible for 18).
+ */
 export function rateToPerSecond(amount: string, unit: RateUnitKey, decimals: number): bigint {
-  return parseUnits(amount, decimals) / BigInt(unitSeconds(unit))
-}
-
-/** Trim a number to a sane precision for a rate input field (drops trailing zeros). */
-function formatRateNumber(n: number): string {
-  if (n === 0) return '0'
-  const fixed = n >= 1 ? n.toFixed(2) : n.toPrecision(4)
-  return String(parseFloat(fixed))
+  const total = parseUnits(amount, decimals)
+  const secs = BigInt(unitSeconds(unit))
+  return (total + secs - 1n) / secs
 }
 
 /**
- * Re-express the same flow at a different unit scale — used when the user changes
- * the time unit so the displayed amount stays equivalent (same per-second flow).
- * Pure display math; the on-chain truth stays `amountPerSecond`.
+ * Per-second flow (ceil) to pay an exact total over a duration — the vesting rate.
+ * Pair with maxAmount = totalRaw: the cap holds the total exactly, ceil makes it
+ * reach the cap on or just before the deadline (never short, never over the total).
  */
-export function convertRate(amount: string, fromUnit: RateUnitKey, toUnit: RateUnitKey): string {
-  const n = parseFloat(amount)
-  if (!Number.isFinite(n)) return amount
-  return formatRateNumber((n * unitSeconds(toUnit)) / unitSeconds(fromUnit))
+export function perSecondForTotal(totalRaw: bigint, durationSeconds: number): bigint {
+  if (durationSeconds <= 0) return 0n
+  const d = BigInt(durationSeconds)
+  return (totalRaw + d - 1n) / d
+}
+
+/**
+ * The exact human rate an integer per-second flow represents at a unit scale —
+ * the "snapped" value to show so the UI never displays an amount the caveat can't
+ * actually stream (for USDC 300/month snaps to 300.672; for 18-decimal tokens the
+ * snap is invisible).
+ */
+export function perSecondToRate(amountPerSecondRaw: bigint, unit: RateUnitKey, decimals: number): string {
+  return formatUnits(amountPerSecondRaw * BigInt(unitSeconds(unit)), decimals)
 }
 
 /** The same per-second flow expressed at every scale, for a reactive breakdown line. */
