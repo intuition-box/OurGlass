@@ -371,20 +371,22 @@ export default function CreateStream() {
         </Block>
 
         {/* Block 2 — Payment details */}
-        <Block title="Payment details">
-          <div>
+        <Block
+          title="Payment details"
+          action={
             <Segmented
               value={useCustomToken}
               onChange={setUseCustomToken}
               options={[{ key: false, label: <USDC size={15} /> }, { key: true, label: 'Custom ERC-20' }]}
             />
-            {useCustomToken && (
-              <div className="grid grid-cols-[1fr_88px] gap-2 mt-3">
-                <input type="text" placeholder="Token 0x…" value={customToken} onChange={(e) => setCustomToken(e.target.value)} />
-                <input type="number" placeholder="6" value={customDecimals} onChange={(e) => setCustomDecimals(parseInt(e.target.value) || 6)} min={0} max={24} />
-              </div>
-            )}
-          </div>
+          }
+        >
+          {useCustomToken && (
+            <div className="grid grid-cols-[1fr_88px] gap-2">
+              <input type="text" placeholder="Token 0x…" value={customToken} onChange={(e) => setCustomToken(e.target.value)} />
+              <input type="number" placeholder="6" value={customDecimals} onChange={(e) => setCustomDecimals(parseInt(e.target.value) || 6)} min={0} max={24} />
+            </div>
+          )}
 
           <Field label="Pay rate" required missing={errs.rate}>
             <div className="grid grid-cols-3 gap-2">
@@ -415,16 +417,18 @@ export default function CreateStream() {
         </Block>
 
         {/* Block 3 — Security / limit */}
-        <Block title="Security / limit">
-          <div>
+        <Block
+          title="Security / limit"
+          action={
             <Segmented
               value={boundMode}
               onChange={setBoundMode}
               options={[{ key: 'revocation', label: 'Revocation only' }, { key: 'hardcap', label: 'Hard cap' }]}
             />
-
-            {boundMode === 'hardcap' && (
-              <div className="mt-3 grid grid-cols-3 gap-2">
+          }
+        >
+          {boundMode === 'hardcap' && (
+            <div className="grid grid-cols-3 gap-2">
                 <div>
                   <div className="text-[11px] text-faint mb-1">End date</div>
                   <input type="date" value={capDurationSeconds > 0 ? toDateInput(now + capDurationSeconds) : ''} onChange={(e) => onEndDateChange(e.target.value)} onBlur={() => setTouchedCap(true)} className={errs.cap ? 'ring-1 ring-danger' : ''} />
@@ -447,7 +451,6 @@ export default function CreateStream() {
                 </div>
               </div>
             )}
-          </div>
         </Block>
       </div>
 
@@ -520,7 +523,6 @@ function Segmented<T extends string | boolean>({ options, value, onChange }: {
   onChange: (v: T) => void
 }) {
   return (
-    <div className="flex justify-center">
     <div className="inline-flex items-center gap-0.5 p-0.5 rounded-full bg-raised ring-1 ring-line">
       {options.map((o, i) => {
         const active = o.key === value
@@ -537,14 +539,16 @@ function Segmented<T extends string | boolean>({ options, value, onChange }: {
         )
       })}
     </div>
-    </div>
   )
 }
 
-function Block({ title, children }: { title: string; children: React.ReactNode }) {
+function Block({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
     <Card className="p-5 space-y-4">
-      <div className="flex items-center gap-2 text-xs font-semibold text-faint uppercase tracking-wide"><IconCal size={14} /> {title}</div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-xs font-semibold text-faint uppercase tracking-wide"><IconCal size={14} /> {title}</div>
+        {action}
+      </div>
       {children}
     </Card>
   )
