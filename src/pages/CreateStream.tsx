@@ -353,7 +353,7 @@ export default function CreateStream() {
   }
 
   return (
-    <div className="rise grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+    <div className="rise grid grid-cols-1 lg:grid-cols-[1fr_minmax(300px,360px)] gap-6 items-stretch">
       {/* Form */}
       <div className="space-y-5">
         {error && (
@@ -461,7 +461,7 @@ export default function CreateStream() {
       </div>
 
       {/* What the erc20Streaming caveat enforces on-chain — not a mirror of the form */}
-      <Card className="p-5 lg:sticky lg:top-4">
+      <Card className="p-5 flex flex-col">
         <div className="flex items-center gap-2 text-xs font-semibold text-faint uppercase tracking-wide"><IconLock size={15} /> Enforced on-chain</div>
 
         <div className="mt-4 space-y-3 text-sm">
@@ -503,7 +503,7 @@ export default function CreateStream() {
           </div>
         </div>
 
-        <div className="mt-5 pt-4 border-t border-line space-y-3">
+        <div className="mt-auto pt-4 border-t border-line space-y-3">
           {step === 'idle' ? (
             <>
               <div className="flex items-center gap-2 text-xs text-dim">
