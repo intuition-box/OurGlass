@@ -489,7 +489,7 @@ export default function CreateStream() {
             <div className={`mt-1 grid grid-cols-[1fr_1.35fr_1fr] rounded-xl ring-1 divide-x divide-line ${errs.cap ? 'ring-danger' : 'ring-line'}`}>
               <div className="p-3">
                 <div className="text-[11px] text-faint mb-1.5 text-center uppercase tracking-wide">End date</div>
-                <input type="date" value={capDurationSeconds > 0 ? toDateInput(now + capDurationSeconds) : ''} onChange={(e) => onEndDateChange(e.target.value)} onBlur={() => setTouchedCap(true)} className="w-full" />
+                <input type="date" lang="en" value={capDurationSeconds > 0 ? toDateInput(now + capDurationSeconds) : ''} onChange={(e) => onEndDateChange(e.target.value)} onBlur={() => setTouchedCap(true)} className="w-full" />
               </div>
               <div className="p-3">
                 <div className="text-[11px] text-faint mb-1.5 text-center uppercase tracking-wide">Duration</div>
