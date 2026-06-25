@@ -3,7 +3,7 @@ import { useSafeAppsSDK } from '@safe-global/safe-apps-react-sdk'
 import { createPublicClient, http, isAddress, erc20Abi, formatUnits, BaseError, type Address } from 'viem'
 import { getDelegations, type StoredDelegation } from '../lib/storage'
 import { buildRedeemTx } from '../lib/redeemDirect'
-import { useStreamState, type StreamClaimView } from '../hooks/useStreamState'
+import { useClaimState, type ClaimView } from '../hooks/useClaimState'
 import { Card, Btn, StatusBadge, Payee, Mono, USDC } from '../ui/components'
 import { IconBolt, IconCheck, IconLock, IconArrowL, IconRepeat } from '../ui/icons'
 import { findChain } from '../config/supported-chains'
@@ -38,17 +38,18 @@ function Stat({ label, value, sym, tint }: { label: string; value: string; sym: 
   )
 }
 
-// Claimed / claimable / cap for a stream, read from the enforcer (on-chain) or
-// estimated from the signed terms before the first claim.
-function StreamProgress({ view, symbol }: { view: StreamClaimView; symbol: string }) {
-  if (view.loading) return <div className="mt-5 text-xs text-faint">Reading stream state…</div>
-  if (view.error) return <div className="mt-5 text-xs text-danger">Could not read stream state: {view.error}</div>
-  const { claimed, claimable, cap, decimals, onChain } = view
+// Claimed / claimable / cap for a delegation, read from the caveat enforcer
+// (on-chain) or estimated from the signed terms before a stream's first claim.
+function ClaimProgress({ view, symbol }: { view: ClaimView; symbol: string }) {
+  if (view.loading) return <div className="mt-5 text-xs text-faint">Reading on-chain state…</div>
+  if (view.error) return <div className="mt-5 text-xs text-danger">Could not read on-chain state: {view.error}</div>
+  const { claimed, claimable, cap, decimals, onChain, scope } = view
+  const period = scope === 'subscription'
   const pct = (v: bigint) => (cap && cap > 0n ? Math.min(100, Number((v * 10000n) / cap) / 100) : 0)
   return (
     <div className="mt-5 rounded-xl bg-raised ring-1 ring-line p-4">
       <div className="flex items-center justify-between">
-        <span className="text-xs text-faint uppercase tracking-wide">Stream progress</span>
+        <span className="text-xs text-faint uppercase tracking-wide">{period ? 'This period' : 'Stream progress'}</span>
         <span className="text-[10px] text-faint">{onChain ? 'on-chain' : 'estimated'}</span>
       </div>
       {cap !== null && (
@@ -56,7 +57,7 @@ function StreamProgress({ view, symbol }: { view: StreamClaimView; symbol: strin
           className="mt-3 h-2 rounded-full overflow-hidden flex"
           style={{ background: 'var(--line, rgba(255,255,255,.08))' }}
           role="progressbar"
-          aria-label="Claimed and claimable against the stream cap"
+          aria-label={period ? 'Claimed and claimable against the period cap' : 'Claimed and claimable against the stream cap'}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={Math.round(pct(claimed) + pct(claimable))}
@@ -68,7 +69,7 @@ function StreamProgress({ view, symbol }: { view: StreamClaimView; symbol: strin
       <div className="mt-3 grid grid-cols-3 gap-2 text-center">
         <Stat label="Claimed" value={fmtAmount(claimed, decimals)} sym={symbol} tint="var(--accent)" />
         <Stat label="Claimable now" value={fmtAmount(claimable, decimals)} sym={symbol} tint="#22D3EE" />
-        <Stat label={cap !== null ? 'Cap' : 'Unbounded'} value={cap !== null ? fmtAmount(cap, decimals) : '∞'} sym={cap !== null ? symbol : ''} tint="#6b7280" />
+        <Stat label={cap !== null ? (period ? 'Period cap' : 'Cap') : 'Unbounded'} value={cap !== null ? fmtAmount(cap, decimals) : '∞'} sym={cap !== null ? symbol : ''} tint="#6b7280" />
       </div>
     </div>
   )
@@ -84,9 +85,9 @@ export default function Charge() {
   const [safeTxHash, setSafeTxHash] = useState<string | null>(null)
   const [amountEdited, setAmountEdited] = useState(false)
 
-  // Claimed / claimable / cap for the selected stream (on-chain enforcer state,
-  // or estimated from terms before the first claim). No-op for subscriptions.
-  const stream = useStreamState(selected && isStream(selected) ? selected : null)
+  // Claimed / claimable / cap for the selected delegation, read from the caveat
+  // enforcer (stream lifetime cap, or subscription per-period cap).
+  const claim = useClaimState(selected)
 
   // This Safe can only redeem delegations where it is the delegate (payee) —
   // both per-period subscriptions and accumulating streams.
@@ -103,8 +104,8 @@ export default function Charge() {
 
   function pick(d: StoredDelegation) {
     setSelected(d)
-    // Subscriptions default to the period cap; streams default to the claimable
-    // balance, filled by the effect below once the stream state resolves.
+    // Seed with the period cap for subscriptions; the effect below overrides with
+    // the claimable balance once the on-chain state resolves.
     setAmount(isStream(d) ? '' : d.meta.amount ?? '')
     setAmountEdited(false)
     setRecipient(d.meta.recipient ?? '')
@@ -112,12 +113,12 @@ export default function Charge() {
     setSafeTxHash(null)
   }
 
-  // Pre-fill the claim amount with the claimable balance (on-chain or estimated),
-  // until the user edits it. The erc20Streaming caveat caps the actual claim.
+  // Pre-fill the claim amount with the claimable balance, until the user edits it.
+  // The caveat caps the actual claim on-chain regardless.
   useEffect(() => {
-    if (!selected || !isStream(selected) || stream.loading || amountEdited) return
-    setAmount(formatUnits(stream.claimable, stream.decimals))
-  }, [selected, stream.claimable, stream.decimals, stream.loading, amountEdited])
+    if (!selected || claim.loading || claim.error || amountEdited) return
+    setAmount(formatUnits(claim.claimable, claim.decimals))
+  }, [selected, claim.claimable, claim.decimals, claim.loading, claim.error, amountEdited])
 
   async function handleCharge() {
     if (!selected) return
@@ -206,19 +207,18 @@ export default function Charge() {
           </div>
 
           {isStream(selected) ? (
-            <>
-              <div className="mt-5 rounded-xl bg-raised ring-1 ring-line p-4 flex items-center justify-between">
-                <span className="text-xs text-faint flex items-center gap-1.5"><IconRepeat size={13} /> Accrues</span>
-                <span className="font-mono font-bold text-ink">{selected.meta.ratePerPeriod} <span className="text-dim text-sm font-semibold">USDC / {selected.meta.ratePeriod}</span></span>
-              </div>
-              <StreamProgress view={stream} symbol={selected.meta.tokenAddress ? 'USDC' : ''} />
-            </>
+            <div className="mt-5 rounded-xl bg-raised ring-1 ring-line p-4 flex items-center justify-between">
+              <span className="text-xs text-faint flex items-center gap-1.5"><IconRepeat size={13} /> Accrues</span>
+              <span className="font-mono font-bold text-ink">{selected.meta.ratePerPeriod} <span className="text-dim text-sm font-semibold">USDC / {selected.meta.ratePeriod}</span></span>
+            </div>
           ) : (
             <div className="mt-5 rounded-xl bg-raised ring-1 ring-line p-4 flex items-center justify-between">
               <span className="text-xs text-faint flex items-center gap-1.5"><IconLock size={13} /> Period cap</span>
               <span className="font-mono font-bold text-ink">{selected.meta.amount} <span className="text-dim text-sm font-semibold">{selected.meta.tokenAddress ? 'USDC' : ''} / {selected.meta.period}</span></span>
             </div>
           )}
+
+          <ClaimProgress view={claim} symbol={selected.meta.tokenAddress ? 'USDC' : ''} />
 
           {error && (
             <div className="mt-4 rounded-xl px-3 py-2 text-sm text-danger" style={{ background: 'rgba(251,113,133,.10)', boxShadow: 'inset 0 0 0 1px rgba(251,113,133,.30)' }}>{error}</div>
@@ -237,9 +237,7 @@ export default function Charge() {
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">{selected.meta.tokenAddress ? 'USDC' : ''}</span>
               </div>
               <p className="text-xs text-faint mt-1">
-                {isStream(selected)
-                  ? 'Pre-filled with the claimable balance above. The exact amount is capped on-chain by the stream caveat; the Safe pays gas in ETH.'
-                  : 'Defaults to the period cap. Capped on-chain by the caveat; the Safe pays gas in ETH.'}
+                Pre-filled with the claimable balance above. The exact amount is capped on-chain by the caveat; the Safe pays gas in ETH.
               </p>
             </div>
           </div>
