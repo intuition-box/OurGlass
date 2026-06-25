@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useSafeAppsSDK } from '@safe-global/safe-apps-react-sdk'
 import { createPublicClient, http, isAddress, erc20Abi, formatUnits, BaseError, type Address } from 'viem'
 import { getDelegations, type StoredDelegation } from '../lib/storage'
-import { streamedAvailable } from '../lib/streamTerms'
 import { buildRedeemTx } from '../lib/redeemDirect'
+import { useStreamState, type StreamClaimView } from '../hooks/useStreamState'
 import { Card, Btn, StatusBadge, Payee, Mono, USDC } from '../ui/components'
 import { IconBolt, IconCheck, IconLock, IconArrowL, IconRepeat } from '../ui/icons'
 import { findChain } from '../config/supported-chains'
@@ -18,6 +18,62 @@ const tintFor = (addr: string) => {
   return palette[h % palette.length]
 }
 
+// Display helper: at most 2 decimals, dot separator, trailing zeros trimmed.
+function fmtAmount(raw: bigint, decimals: number): string {
+  const [int, frac = ''] = formatUnits(raw, decimals).split('.')
+  const f = frac.slice(0, 2).replace(/0+$/, '')
+  return f ? `${int}.${f}` : int
+}
+
+function Stat({ label, value, sym, tint }: { label: string; value: string; sym: string; tint: string }) {
+  return (
+    <div>
+      <div className="flex items-center justify-center gap-1.5 text-[10px] text-faint uppercase tracking-wide">
+        <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: tint }} /> {label}
+      </div>
+      <div className="font-mono font-bold text-ink tnum mt-1 leading-none">
+        {value}{sym && <span className="text-dim text-[11px] font-semibold"> {sym}</span>}
+      </div>
+    </div>
+  )
+}
+
+// Claimed / claimable / cap for a stream, read from the enforcer (on-chain) or
+// estimated from the signed terms before the first claim.
+function StreamProgress({ view, symbol }: { view: StreamClaimView; symbol: string }) {
+  if (view.loading) return <div className="mt-5 text-xs text-faint">Reading stream state…</div>
+  if (view.error) return <div className="mt-5 text-xs text-danger">Could not read stream state: {view.error}</div>
+  const { claimed, claimable, cap, decimals, onChain } = view
+  const pct = (v: bigint) => (cap && cap > 0n ? Math.min(100, Number((v * 10000n) / cap) / 100) : 0)
+  return (
+    <div className="mt-5 rounded-xl bg-raised ring-1 ring-line p-4">
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-faint uppercase tracking-wide">Stream progress</span>
+        <span className="text-[10px] text-faint">{onChain ? 'on-chain' : 'estimated'}</span>
+      </div>
+      {cap !== null && (
+        <div
+          className="mt-3 h-2 rounded-full overflow-hidden flex"
+          style={{ background: 'var(--line, rgba(255,255,255,.08))' }}
+          role="progressbar"
+          aria-label="Claimed and claimable against the stream cap"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(pct(claimed) + pct(claimable))}
+        >
+          <div style={{ width: `${pct(claimed)}%`, background: 'var(--accent)' }} />
+          <div style={{ width: `${pct(claimable)}%`, background: '#22D3EE' }} />
+        </div>
+      )}
+      <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+        <Stat label="Claimed" value={fmtAmount(claimed, decimals)} sym={symbol} tint="var(--accent)" />
+        <Stat label="Claimable now" value={fmtAmount(claimable, decimals)} sym={symbol} tint="#22D3EE" />
+        <Stat label={cap !== null ? 'Cap' : 'Unbounded'} value={cap !== null ? fmtAmount(cap, decimals) : '∞'} sym={cap !== null ? symbol : ''} tint="#6b7280" />
+      </div>
+    </div>
+  )
+}
+
 export default function Charge() {
   const { sdk, safe } = useSafeAppsSDK()
   const [selected, setSelected] = useState<StoredDelegation | null>(null)
@@ -26,6 +82,11 @@ export default function Charge() {
   const [charging, setCharging] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [safeTxHash, setSafeTxHash] = useState<string | null>(null)
+  const [amountEdited, setAmountEdited] = useState(false)
+
+  // Claimed / claimable / cap for the selected stream (on-chain enforcer state,
+  // or estimated from terms before the first claim). No-op for subscriptions.
+  const stream = useStreamState(selected && isStream(selected) ? selected : null)
 
   // This Safe can only redeem delegations where it is the delegate (payee) —
   // both per-period subscriptions and accumulating streams.
@@ -42,44 +103,21 @@ export default function Charge() {
 
   function pick(d: StoredDelegation) {
     setSelected(d)
-    // Subscriptions default to the period cap; streams default to the estimated
-    // accrued balance (filled by the effect below once decimals are known).
+    // Subscriptions default to the period cap; streams default to the claimable
+    // balance, filled by the effect below once the stream state resolves.
     setAmount(isStream(d) ? '' : d.meta.amount ?? '')
+    setAmountEdited(false)
     setRecipient(d.meta.recipient ?? '')
     setError(null)
     setSafeTxHash(null)
   }
 
-  // Estimate the claimable streamed balance for the selected stream. The estimate
-  // is UX only — the erc20Streaming caveat caps the actual claim on-chain.
+  // Pre-fill the claim amount with the claimable balance (on-chain or estimated),
+  // until the user edits it. The erc20Streaming caveat caps the actual claim.
   useEffect(() => {
-    if (!selected || !isStream(selected)) return
-    const m = selected.meta
-    if (!m.tokenAddress || !m.amountPerSecond || !m.maxAmount || m.startTime == null) return
-    let cancelled = false
-    ;(async () => {
-      const chain = findChain(safe.chainId)
-      if (!chain) return
-      const client = createPublicClient({ chain, transport: http() })
-      let decimals = 6
-      try {
-        decimals = await client.readContract({ address: m.tokenAddress as Address, abi: erc20Abi, functionName: 'decimals' })
-      } catch {
-        // default to USDC decimals
-      }
-      const available = streamedAvailable({
-        amountPerSecondRaw: m.amountPerSecond!,
-        initialAmountRaw: m.initialAmount ?? '0',
-        maxAmountRaw: m.maxAmount!,
-        startTime: m.startTime!,
-        nowSeconds: Math.floor(Date.now() / 1000),
-      })
-      if (!cancelled) setAmount(formatUnits(available, decimals))
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [selected, safe.chainId])
+    if (!selected || !isStream(selected) || stream.loading || amountEdited) return
+    setAmount(formatUnits(stream.claimable, stream.decimals))
+  }, [selected, stream.claimable, stream.decimals, stream.loading, amountEdited])
 
   async function handleCharge() {
     if (!selected) return
@@ -168,10 +206,13 @@ export default function Charge() {
           </div>
 
           {isStream(selected) ? (
-            <div className="mt-5 rounded-xl bg-raised ring-1 ring-line p-4 flex items-center justify-between">
-              <span className="text-xs text-faint flex items-center gap-1.5"><IconRepeat size={13} /> Accrues</span>
-              <span className="font-mono font-bold text-ink">{selected.meta.ratePerPeriod} <span className="text-dim text-sm font-semibold">USDC / {selected.meta.ratePeriod}</span></span>
-            </div>
+            <>
+              <div className="mt-5 rounded-xl bg-raised ring-1 ring-line p-4 flex items-center justify-between">
+                <span className="text-xs text-faint flex items-center gap-1.5"><IconRepeat size={13} /> Accrues</span>
+                <span className="font-mono font-bold text-ink">{selected.meta.ratePerPeriod} <span className="text-dim text-sm font-semibold">USDC / {selected.meta.ratePeriod}</span></span>
+              </div>
+              <StreamProgress view={stream} symbol={selected.meta.tokenAddress ? 'USDC' : ''} />
+            </>
           ) : (
             <div className="mt-5 rounded-xl bg-raised ring-1 ring-line p-4 flex items-center justify-between">
               <span className="text-xs text-faint flex items-center gap-1.5"><IconLock size={13} /> Period cap</span>
@@ -192,12 +233,12 @@ export default function Charge() {
             <div>
               <label className="text-sm font-medium text-ink block mb-1.5">{isStream(selected) ? 'Claim amount' : 'Amount'}</label>
               <div className="relative">
-                <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} min={0} step="any" className="pr-16" />
+                <input type="number" value={amount} onChange={(e) => { setAmount(e.target.value); setAmountEdited(true) }} min={0} step="any" className="pr-16" />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">{selected.meta.tokenAddress ? 'USDC' : ''}</span>
               </div>
               <p className="text-xs text-faint mt-1">
                 {isStream(selected)
-                  ? 'Estimated accrued balance. The exact claimable amount is enforced on-chain by the stream caveat; the Safe pays gas in ETH.'
+                  ? 'Pre-filled with the claimable balance above. The exact amount is capped on-chain by the stream caveat; the Safe pays gas in ETH.'
                   : 'Defaults to the period cap. Capped on-chain by the caveat; the Safe pays gas in ETH.'}
               </p>
             </div>
