@@ -353,7 +353,7 @@ export default function CreateStream() {
   }
 
   return (
-    <div className="rise grid grid-cols-1 lg:grid-cols-[1fr_minmax(300px,360px)] gap-6 items-start">
+    <div className="rise grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
       {/* Form */}
       <div className="space-y-5">
         {error && (
