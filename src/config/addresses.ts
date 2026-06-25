@@ -18,6 +18,16 @@ export interface ChainAddresses {
   allowedCalldataEnforcer: Address
   redeemerEnforcer: Address
   delegationMetaSwapAdapter: Address
+  // OurGlass-owned instances of the audited enforcers (unmodified bytecode, deployed
+  // under the OurGlass CREATE2 salt). Present only on chains where they are deployed.
+  // The period enforcer doubles as the on-chain analytics marker — its
+  // TransferredInPeriod events are attributable to OurGlass by emitter address
+  // (see spec/plan-analytics.md and spec/ourglass-enforcer-instances.md).
+  ourglass?: {
+    erc20PeriodTransferEnforcer: Address
+    timestampEnforcer: Address
+    erc20StreamingEnforcer: Address
+  }
 }
 
 // DelegationManager from the Delegation Framework v1.3.0
@@ -64,15 +74,20 @@ export const addresses: Record<number, ChainAddresses> = {
     delegatorModuleFactory: '0x0D0421e43057bf850e243EcDA2AD8966C8D5877B' as Address,
     ...SHARED_ENFORCERS,
   },
-  // Ethereum Mainnet (1) — DelegationManager + enforcers are the deterministic
-  // MetaMask deployments (same addresses). The DeleGatorModuleFactory is NOT
-  // deterministic: deploy it with `DEPLOYER_PRIVATE_KEY=0x… node scripts/deploy-factory.mjs`
-  // against a mainnet RPC, then paste the printed address below. Until then the
-  // zero address makes module setup fail gracefully ("Configuration needed").
+  // Ethereum Mainnet (1) — DelegationManager + shared enforcers are the deterministic
+  // MetaMask deployments. The DeleGatorModuleFactory and the OurGlass enforcer
+  // instances were deployed on 2026-06-25 from the OWS `ourglass-deployer` wallet
+  // (0x2FF0363132d0dc5feb090790C46B77EF1ce96aa2); see
+  // spec/ourglass-enforcer-instances.md.
   1: {
     delegationManager: DELEGATION_MANAGER,
-    delegatorModuleFactory: '0x0000000000000000000000000000000000000000' as Address, // TODO: deploy on mainnet, paste here
+    delegatorModuleFactory: '0xbDDe43bcF6db9DBeB1127e6574ccF70bFb1c2dc3' as Address,
     ...SHARED_ENFORCERS,
+    ourglass: {
+      erc20PeriodTransferEnforcer: '0x11262E3116a50654547AB0A417BE77eB14b9F339' as Address,
+      timestampEnforcer: '0xF1635460548F44543366ec4453D512a7Ce85Af85' as Address,
+      erc20StreamingEnforcer: '0xE475D14d61756D6e940B74C20d2E44EB70c71a8D' as Address,
+    },
   },
   // Localhost / Anvil (forked Base Sepolia, uses same chain ID)
   // When running locally, the factory address comes from test/deployment.json
