@@ -367,20 +367,19 @@ export default function CreateStream() {
 
         {/* Block 2 — Payment details */}
         <Block title="Payment details">
-          <Field label="Token">
+          <div>
             <Segmented
               value={useCustomToken}
               onChange={setUseCustomToken}
               options={[{ key: false, label: <USDC size={15} /> }, { key: true, label: 'Custom ERC-20' }]}
             />
-            {!useCustomToken && defaultUsdc && <p className="text-xs text-faint font-mono mt-2 truncate">{defaultUsdc}</p>}
             {useCustomToken && (
-              <div className="grid grid-cols-[1fr_88px] gap-2 mt-2">
+              <div className="grid grid-cols-[1fr_88px] gap-2 mt-3">
                 <input type="text" placeholder="Token 0x…" value={customToken} onChange={(e) => setCustomToken(e.target.value)} />
                 <input type="number" placeholder="6" value={customDecimals} onChange={(e) => setCustomDecimals(parseInt(e.target.value) || 6)} min={0} max={24} />
               </div>
             )}
-          </Field>
+          </div>
 
           <Field label="Pay rate" required missing={errs.rate}>
             <div className="grid grid-cols-3 gap-2">
@@ -412,7 +411,7 @@ export default function CreateStream() {
 
         {/* Block 3 — Security / limit */}
         <Block title="Security / limit">
-          <Field label="Limit">
+          <div>
             <Segmented
               value={boundMode}
               onChange={setBoundMode}
@@ -443,7 +442,7 @@ export default function CreateStream() {
                 </div>
               </div>
             )}
-          </Field>
+          </div>
         </Block>
       </div>
 
