@@ -439,6 +439,9 @@ export default function CreateStream() {
               {tokenStatus === 'error' && customToken && <p className="text-xs text-danger mt-1">Not a readable ERC-20 on {chainName(safe.chainId)} — make sure the token is deployed on this chain.</p>}
             </div>
           )}
+          {!useCustomToken && (
+            <p className="text-xs text-faint"><span className="text-ink font-semibold">USDC</span> · USD Coin · 6 decimals</p>
+          )}
 
           <Field label="Pay rate" required missing={errs.rate}>
             <div className="grid grid-cols-3 gap-2">
