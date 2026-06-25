@@ -486,7 +486,7 @@ export default function CreateStream() {
           </PreviewRow>
 
           <div className="pt-3 border-t border-line">
-            <p className="text-[11px] text-faint leading-relaxed">The exact terms the <span className="text-dim">erc20Streaming</span> caveat enforces: flow per second, total cap, beneficiary.</p>
+            <p className="text-[11px] text-faint leading-relaxed">The exact terms the <a href="https://docs.metamask.io/smart-accounts-kit/reference/delegation/caveats#erc20streaming" target="_blank" rel="noreferrer" className="text-[color:var(--accent)] hover:underline">erc20Streaming</a> caveat enforces: flow per second, total cap, beneficiary.</p>
           </div>
         </div>
 
