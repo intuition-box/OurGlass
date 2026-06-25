@@ -516,7 +516,7 @@ function Segmented<T extends string | boolean>({ options, value, onChange }: {
   onChange: (v: T) => void
 }) {
   return (
-    <div className="flex items-center gap-1 p-1 rounded-full bg-raised ring-1 ring-line">
+    <div className="inline-flex items-center gap-0.5 p-0.5 rounded-full bg-raised ring-1 ring-line">
       {options.map((o, i) => {
         const active = o.key === value
         return (
@@ -524,8 +524,8 @@ function Segmented<T extends string | boolean>({ options, value, onChange }: {
             key={i}
             type="button"
             onClick={() => onChange(o.key)}
-            className={`flex-1 h-9 rounded-full text-sm font-semibold inline-flex items-center justify-center gap-2 transition ${active ? '' : 'text-dim hover:text-ink'}`}
-            style={active ? { background: 'var(--accent)', color: '#08130d', boxShadow: '0 2px 12px rgba(88,230,184,.35)' } : undefined}
+            className={`px-3 h-7 rounded-full text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition ${active ? '' : 'text-dim hover:text-ink'}`}
+            style={active ? { background: 'var(--accent)', color: '#08130d', boxShadow: '0 1px 8px rgba(88,230,184,.3)' } : undefined}
           >
             {o.label}
           </button>
