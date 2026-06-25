@@ -41,10 +41,10 @@ const RATE_SCALES = [
 ]
 
 const DURATION_UNITS = [
-  { key: 'year', label: 'years', seconds: 31_557_600 },
-  { key: 'month', label: 'months', seconds: 2_592_000 },
-  { key: 'week', label: 'weeks', seconds: 604_800 },
-  { key: 'day', label: 'days', seconds: 86_400 },
+  { key: 'year', label: 'yr', seconds: 31_557_600 },
+  { key: 'month', label: 'mo', seconds: 2_592_000 },
+  { key: 'week', label: 'wk', seconds: 604_800 },
+  { key: 'day', label: 'dy', seconds: 86_400 },
 ]
 
 const dateStr = (sec: number) => new Date(sec * 1000).toLocaleDateString()
@@ -493,9 +493,9 @@ export default function CreateStream() {
               </div>
               <div className="p-3">
                 <div className="text-[11px] text-faint mb-1.5 text-center uppercase tracking-wide">Duration</div>
-                <div className="space-y-1.5">
-                  <input type="text" inputMode="decimal" placeholder="3" value={capDurationN} onChange={(e) => setCapDurationN(clampDur(dec(e.target.value)))} onBlur={() => setTouchedCap(true)} className="w-full" />
-                  <select value={capDurationUnit} onChange={(e) => setCapDurationUnit(e.target.value)} className="w-full">
+                <div className="flex gap-1.5">
+                  <input type="text" inputMode="decimal" placeholder="3" value={capDurationN} onChange={(e) => setCapDurationN(clampDur(dec(e.target.value)))} onBlur={() => setTouchedCap(true)} className="flex-1 min-w-0" />
+                  <select value={capDurationUnit} onChange={(e) => setCapDurationUnit(e.target.value)} className="w-14 shrink-0 px-1">
                     {DURATION_UNITS.map((u) => <option key={u.key} value={u.key}>{u.label}</option>)}
                   </select>
                 </div>
