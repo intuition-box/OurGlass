@@ -516,6 +516,7 @@ function Segmented<T extends string | boolean>({ options, value, onChange }: {
   onChange: (v: T) => void
 }) {
   return (
+    <div className="flex justify-center">
     <div className="inline-flex items-center gap-0.5 p-0.5 rounded-full bg-raised ring-1 ring-line">
       {options.map((o, i) => {
         const active = o.key === value
@@ -531,6 +532,7 @@ function Segmented<T extends string | boolean>({ options, value, onChange }: {
           </button>
         )
       })}
+    </div>
     </div>
   )
 }
