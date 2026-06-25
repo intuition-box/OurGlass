@@ -4,7 +4,7 @@ import { createPublicClient, http, isAddress, parseUnits, formatUnits, type Addr
 import { createDelegation } from '@metamask/smart-accounts-kit'
 import { DeleGatorModuleFactoryABI } from '../config/abis'
 import { getAddresses } from '../config/addresses'
-import { findChain, USDC_ADDRESS, chainName } from '../config/supported-chains'
+import { findChain, USDC_ADDRESS, chainName, rpcUrl } from '../config/supported-chains'
 import { DEFAULT_SALT } from '../lib/module'
 import { buildDelegationTypedData, computeDelegationHash, type DelegationStruct } from '../lib/delegations'
 import { ipfsToHttp, type PinResult } from '../lib/subscriptionTerms'
@@ -99,7 +99,7 @@ export default function CreateStream() {
     if (!useCustomToken || !isAddress(customToken)) { setTokenMeta(null); setTokenStatus('idle'); return }
     const chain = findChain(safe.chainId)
     if (!chain) { setTokenStatus('error'); return }
-    const client = createPublicClient({ chain, transport: http() })
+    const client = createPublicClient({ chain, transport: http(rpcUrl(safe.chainId)) })
     let cancelled = false
     setTokenStatus('loading')
     ;(async () => {
@@ -235,7 +235,7 @@ export default function CreateStream() {
       const delegate = recipient as Address
       const chain = findChain(safe.chainId)
       if (!chain) throw new Error(`Unsupported chain: ${safe.chainId}`)
-      const client = createPublicClient({ chain, transport: http() })
+      const client = createPublicClient({ chain, transport: http(rpcUrl(safe.chainId)) })
       const addrs = getAddresses(safe.chainId)
 
       const moduleAddress = (await client.readContract({

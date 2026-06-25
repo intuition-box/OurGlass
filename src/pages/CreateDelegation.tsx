@@ -20,7 +20,7 @@ import { getEnvironment } from '../lib/environment'
 import { saveDelegation, type StoredDelegation } from '../lib/storage'
 import { Card, Btn, GaslessButton, USDC, Mono, CopyChip, Payee, StatusBadge } from '../ui/components'
 import { IconCube, IconLock, IconCheck, IconExt, IconHash, IconCal } from '../ui/icons'
-import { findChain, USDC_ADDRESS } from '../config/supported-chains'
+import { findChain, USDC_ADDRESS, rpcUrl } from '../config/supported-chains'
 
 const PERIODS: PeriodType[] = ['minutely', 'daily', 'weekly', 'monthly']
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
@@ -113,7 +113,7 @@ export default function CreateDelegation() {
       const delegate = recipient as Address
       const chain = findChain(safe.chainId)
       if (!chain) throw new Error(`Unsupported chain: ${safe.chainId}`)
-      const client = createPublicClient({ chain, transport: http() })
+      const client = createPublicClient({ chain, transport: http(rpcUrl(safe.chainId)) })
       const addrs = getAddresses(safe.chainId)
 
       const moduleAddress = (await client.readContract({

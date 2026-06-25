@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createPublicClient, http } from 'viem'
-import { findChain } from '../config/supported-chains'
+import { findChain, rpcUrl } from '../config/supported-chains'
 import { getAddresses } from '../config/addresses'
 import { readErc20Decimals } from '../lib/erc20'
 import { readStreamState } from '../lib/streamState'
@@ -66,7 +66,7 @@ export function useClaimState(delegation: StoredDelegation | null): ClaimView {
     ;(async () => {
       const chain = findChain(m.chainId)
       if (!chain) throw new Error(`Unsupported chain: ${m.chainId}`)
-      const client = createPublicClient({ chain, transport: http() })
+      const client = createPublicClient({ chain, transport: http(rpcUrl(m.chainId)) })
       const decimals = await readErc20Decimals(client, tokenAddress).catch(() => 6)
       const delegationManager = getAddresses(m.chainId).delegationManager
       const caveats = delegation.delegation.caveats

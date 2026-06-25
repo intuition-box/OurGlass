@@ -4,7 +4,7 @@ import { useAccount, useConnect, useDisconnect, useWalletClient } from 'wagmi'
 import { importDelegationsJson, type StoredDelegation } from '../lib/storage'
 import { ipfsToHttp } from '../lib/subscriptionTerms'
 import { redeemSubscriptionDirect } from '../lib/redeemDirect'
-import { SELECTABLE_CHAINS, findChain, chainName, explorerTx } from '../config/supported-chains'
+import { SELECTABLE_CHAINS, findChain, chainName, explorerTx, rpcUrl } from '../config/supported-chains'
 import { Logo, Card, Btn, StatusBadge, Payee, Mono } from '../ui/components'
 import { IconCheck, IconExt, IconAlert, IconLock, IconDoc, IconCube, IconArrowL } from '../ui/icons'
 
@@ -80,7 +80,7 @@ export default function StandaloneRedeem() {
     try {
       // Base/baseSepolia carry an OP-stack tx formatter whose client type isn't the
       // generic PublicClient the SDK helper expects.
-      const publicClient = createPublicClient({ chain, transport: http() }) as unknown as PublicClient
+      const publicClient = createPublicClient({ chain, transport: http(rpcUrl(chainId)) }) as unknown as PublicClient
       const tokenAddress = sub.meta.tokenAddress
       if (!tokenAddress) throw new Error('Subscription has no token address')
       let decimals = 6

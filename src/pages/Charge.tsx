@@ -6,7 +6,7 @@ import { buildRedeemTx } from '../lib/redeemDirect'
 import { useClaimState, type ClaimView } from '../hooks/useClaimState'
 import { Card, Btn, StatusBadge, Payee, Mono, USDC } from '../ui/components'
 import { IconBolt, IconCheck, IconLock, IconArrowL, IconRepeat } from '../ui/icons'
-import { findChain } from '../config/supported-chains'
+import { findChain, rpcUrl } from '../config/supported-chains'
 
 const isStream = (d: StoredDelegation) => d.meta.scopeType === 'erc20Streaming'
 
@@ -135,7 +135,7 @@ export default function Charge() {
     try {
       const chain = findChain(safe.chainId)
       if (!chain) throw new Error(`Unsupported chain: ${safe.chainId}`)
-      const client = createPublicClient({ chain, transport: http() })
+      const client = createPublicClient({ chain, transport: http(rpcUrl(safe.chainId)) })
       const tokenAddress = selected.meta.tokenAddress
       if (!tokenAddress) throw new Error('Subscription has no token address')
       let decimals = 6
