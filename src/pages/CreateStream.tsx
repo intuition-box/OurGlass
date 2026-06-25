@@ -73,6 +73,10 @@ export default function CreateStream() {
   const [pinnedCid, setPinnedCid] = useState<string | null>(null)
   const [signed, setSigned] = useState<StoredDelegation | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // A field turns red only once it's been touched (focused then left) still invalid.
+  const [touchedBene, setTouchedBene] = useState(false)
+  const [touchedRate, setTouchedRate] = useState(false)
+  const [touchedCap, setTouchedCap] = useState(false)
 
   const defaultUsdc = USDC_ADDRESS[safe.chainId]
   const tokenAddress = useCustomToken ? customToken : defaultUsdc
@@ -130,11 +134,16 @@ export default function CreateStream() {
   // ---- Validation ----
   const rateValid = amountPerSecond > 0n
   const capValid = boundMode === 'revocation' || capDurationSeconds > 0
-  const canSign = recipientValid && rateValid && tokenValid && capValid && !signing
-  const missing = {
-    beneficiary: !recipientValid,
-    rate: !rateValid,
-    cap: boundMode === 'hardcap' && capDurationSeconds <= 0,
+  const ready = recipientValid && rateValid && tokenValid && capValid
+  // A required field shows red only once touched (focused then left) and still invalid.
+  const errs = {
+    beneficiary: touchedBene && !recipientValid,
+    rate: touchedRate && !rateValid,
+    cap: touchedCap && boundMode === 'hardcap' && capDurationSeconds <= 0,
+  }
+  function onSignClick() {
+    if (!ready) { setTouchedBene(true); setTouchedRate(true); setTouchedCap(true); return }
+    handleSign()
   }
 
   function resolveMaxRaw(): bigint {
@@ -276,6 +285,9 @@ export default function CreateStream() {
     setCapDurationUnit('month')
     setActiveTotal(null)
     setError(null)
+    setTouchedBene(false)
+    setTouchedRate(false)
+    setTouchedCap(false)
   }
 
   if (signed) {
@@ -337,8 +349,8 @@ export default function CreateStream() {
           <Field label="Name" hint="Shown in your streams list. Optional.">
             <input type="text" placeholder="Jane Doe" value={beneficiaryName} onChange={(e) => setBeneficiaryName(e.target.value)} />
           </Field>
-          <Field label="Address" required missing={missing.beneficiary} hint="Who can claim, and where funds are paid.">
-            <input type="text" placeholder="0x…" value={recipient} onChange={(e) => setRecipient(e.target.value)} className={missing.beneficiary ? 'ring-1 ring-danger' : ''} />
+          <Field label="Address" required missing={errs.beneficiary} hint="Who can claim, and where funds are paid.">
+            <input type="text" placeholder="0x…" value={recipient} onChange={(e) => setRecipient(e.target.value)} onBlur={() => setTouchedBene(true)} className={errs.beneficiary ? 'ring-1 ring-danger' : ''} />
             {recipient && !recipientValid && <p className="text-xs text-danger mt-1">Invalid address</p>}
           </Field>
         </Block>
@@ -346,14 +358,11 @@ export default function CreateStream() {
         {/* Block 2 — Payment details */}
         <Block title="Payment details">
           <Field label="Token">
-            <div className="flex items-center gap-2">
-              <button type="button" onClick={() => setUseCustomToken(false)} className={`flex-1 h-11 rounded-xl text-sm font-medium inline-flex items-center justify-center gap-2 transition ${!useCustomToken ? 'bg-raised text-ink ring-1 ring-line2' : 'text-dim hover:text-ink'}`}>
-                <USDC size={15} />
-              </button>
-              <button type="button" onClick={() => setUseCustomToken(true)} className={`flex-1 h-11 rounded-xl text-sm font-medium transition ${useCustomToken ? 'bg-raised text-ink ring-1 ring-line2' : 'text-dim hover:text-ink'}`}>
-                Custom ERC-20
-              </button>
-            </div>
+            <Segmented
+              value={useCustomToken}
+              onChange={setUseCustomToken}
+              options={[{ key: false, label: <USDC size={15} /> }, { key: true, label: 'Custom ERC-20' }]}
+            />
             {!useCustomToken && defaultUsdc && <p className="text-xs text-faint font-mono mt-2 truncate">{defaultUsdc}</p>}
             {useCustomToken && (
               <div className="grid grid-cols-[1fr_88px] gap-2 mt-2">
@@ -363,7 +372,7 @@ export default function CreateStream() {
             )}
           </Field>
 
-          <Field label="Pay rate" required missing={missing.rate} hint="The same flow shown at three scales. Edit any one — the others follow.">
+          <Field label="Pay rate" required missing={errs.rate} hint="The same flow shown at three scales. Edit any one — the others follow.">
             <div className="grid grid-cols-3 gap-2">
               {RATE_SCALES.map((s) => (
                 <div key={s.key}>
@@ -373,8 +382,8 @@ export default function CreateStream() {
                       type="number" min={0} step="any" placeholder="0"
                       value={rateCellValue(s.key, s.seconds)}
                       onChange={(e) => onRateChange(s.key, s.seconds, e.target.value)}
-                      onBlur={() => setActiveScale(null)}
-                      className={`pr-12 ${missing.rate ? 'ring-1 ring-danger' : ''}`}
+                      onBlur={() => { setActiveScale(null); setTouchedRate(true) }}
+                      className={`pr-12 ${errs.rate ? 'ring-1 ring-danger' : ''}`}
                     />
                     <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-faint">{tokenSymbol}</span>
                   </div>
@@ -395,13 +404,11 @@ export default function CreateStream() {
         {/* Block 3 — Security / limit */}
         <Block title="Security / limit">
           <Field label="Limit" hint="By default the stream runs until you revoke it. Add a hard cap to bound the total.">
-            <div className="flex items-center gap-2">
-              {([['revocation', 'Revocation only'], ['hardcap', 'Hard cap']] as [BoundMode, string][]).map(([key, label]) => (
-                <button key={key} type="button" onClick={() => setBoundMode(key)} className={`flex-1 h-11 rounded-xl text-sm font-medium transition ${boundMode === key ? 'bg-raised text-ink ring-1 ring-line2' : 'text-dim hover:text-ink'}`}>
-                  {label}
-                </button>
-              ))}
-            </div>
+            <Segmented
+              value={boundMode}
+              onChange={setBoundMode}
+              options={[{ key: 'revocation', label: 'Revocation only' }, { key: 'hardcap', label: 'Hard cap' }]}
+            />
 
             {boundMode === 'hardcap' && (
               <div className="mt-3 grid grid-cols-3 gap-2">
@@ -412,7 +419,7 @@ export default function CreateStream() {
                 <div>
                   <div className="text-[11px] text-faint mb-1">Duration</div>
                   <div className="grid grid-cols-[1fr_auto] gap-1">
-                    <input type="number" min={0} step="any" placeholder="3" value={capDurationN} onChange={(e) => setCapDurationN(e.target.value)} className={missing.cap ? 'ring-1 ring-danger' : ''} />
+                    <input type="number" min={0} step="any" placeholder="3" value={capDurationN} onChange={(e) => setCapDurationN(e.target.value)} onBlur={() => setTouchedCap(true)} className={errs.cap ? 'ring-1 ring-danger' : ''} />
                     <select value={capDurationUnit} onChange={(e) => setCapDurationUnit(e.target.value)} className="w-auto">
                       {DURATION_UNITS.map((u) => <option key={u.key} value={u.key}>{u.label}</option>)}
                     </select>
@@ -421,7 +428,7 @@ export default function CreateStream() {
                 <div>
                   <div className="text-[11px] text-faint mb-1">Total budget</div>
                   <div className="relative">
-                    <input type="number" min={0} step="any" placeholder="900" value={capTotalValue} onChange={(e) => onTotalChange(e.target.value)} onBlur={() => setActiveTotal(null)} className={`pr-12 ${missing.cap ? 'ring-1 ring-danger' : ''}`} />
+                    <input type="number" min={0} step="any" placeholder="900" value={capTotalValue} onChange={(e) => onTotalChange(e.target.value)} onBlur={() => { setActiveTotal(null); setTouchedCap(true) }} className={`pr-12 ${errs.cap ? 'ring-1 ring-danger' : ''}`} />
                     <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-faint">{tokenSymbol}</span>
                   </div>
                 </div>
@@ -440,7 +447,7 @@ export default function CreateStream() {
           <PreviewRow label="Payer"><Mono className="text-xs text-dim">{short(safe.safeAddress)}</Mono></PreviewRow>
           <PreviewRow label="Beneficiary">
             <span className="text-ink truncate">{beneficiaryName || 'Beneficiary'}</span>
-            {recipientValid ? <Mono className="text-[11px] text-faint block">{short(recipient)}</Mono> : <span className="text-[11px] text-danger block">address required</span>}
+            {recipientValid ? <Mono className="text-[11px] text-faint block">{short(recipient)}</Mono> : <span className={`text-[11px] block ${errs.beneficiary ? 'text-danger' : 'text-faint'}`}>{errs.beneficiary ? 'address required' : 'not set'}</span>}
           </PreviewRow>
           <div className="rounded-xl bg-raised ring-1 ring-line p-3">
             <div className="text-faint text-xs">Accrues</div>
@@ -450,7 +457,7 @@ export default function CreateStream() {
                 <div className="text-faint text-[11px] mt-1 font-mono">≈ {perSecondStr} {tokenSymbol}/s</div>
               </>
             ) : (
-              <div className="text-danger text-sm font-semibold mt-0.5">pay rate required</div>
+              <div className={`text-sm font-semibold mt-0.5 ${errs.rate ? 'text-danger' : 'text-faint'}`}>{errs.rate ? 'pay rate required' : 'set a pay rate'}</div>
             )}
           </div>
           <PreviewRow label="Upfront"><span className="font-mono text-ink">{trimAmount(upfront || '0')} {tokenSymbol}</span></PreviewRow>
@@ -466,7 +473,7 @@ export default function CreateStream() {
                 <span className="text-faint text-[11px] block">by {dateStr(now + capDurationSeconds)}</span>
               </>
             ) : (
-              <span className="text-danger text-[11px]">cap duration required</span>
+              <span className={`text-[11px] ${errs.cap ? 'text-danger' : 'text-faint'}`}>{errs.cap ? 'cap duration required' : 'set a duration'}</span>
             )}
           </PreviewRow>
           {rateValid && (
@@ -483,8 +490,8 @@ export default function CreateStream() {
               <div className="flex items-center gap-2 text-xs text-dim">
                 <IconCube size={14} style={{ color: 'var(--accent)' }} /> Pinned to IPFS, hash bound to your signature.
               </div>
-              <GaslessButton size="lg" onClick={handleSign} disabled={!canSign} className="w-full">Pin &amp; sign</GaslessButton>
-              {!canSign && <p className="text-[11px] text-faint text-center">Fill the fields marked in red to sign.</p>}
+              <GaslessButton size="lg" onClick={onSignClick} disabled={signing} className="w-full">Pin &amp; sign</GaslessButton>
+              {!ready && <p className="text-[11px] text-faint text-center">Fill the required fields to sign.</p>}
             </>
           ) : (
             <div className="space-y-2 py-1 text-xs text-dim">
@@ -493,6 +500,31 @@ export default function CreateStream() {
           )}
         </div>
       </Card>
+    </div>
+  )
+}
+
+function Segmented<T extends string | boolean>({ options, value, onChange }: {
+  options: { key: T; label: React.ReactNode }[]
+  value: T
+  onChange: (v: T) => void
+}) {
+  return (
+    <div className="flex items-center gap-1 p-1 rounded-full bg-raised ring-1 ring-line">
+      {options.map((o, i) => {
+        const active = o.key === value
+        return (
+          <button
+            key={i}
+            type="button"
+            onClick={() => onChange(o.key)}
+            className={`flex-1 h-9 rounded-full text-sm font-semibold inline-flex items-center justify-center gap-2 transition ${active ? '' : 'text-dim hover:text-ink'}`}
+            style={active ? { background: 'var(--accent)', color: '#08130d', boxShadow: '0 2px 12px rgba(88,230,184,.35)' } : undefined}
+          >
+            {o.label}
+          </button>
+        )
+      })}
     </div>
   )
 }
