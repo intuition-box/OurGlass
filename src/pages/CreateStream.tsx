@@ -23,12 +23,15 @@ import { IconCube, IconLock, IconCheck, IconExt, IconHash, IconCal } from '../ui
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
 const trimAmount = (s: string) => (s.includes('.') ? s.replace(/\.?0+$/, '') : s)
 const trimNum = (n: number) => (Number.isFinite(n) ? String(Math.round(n * 100) / 100) : '')
+// Normalise a typed amount to a dot decimal so the field reads the same as the
+// preview (point everywhere), while still accepting a comma the user might type.
+const dec = (v: string) => v.replace(',', '.')
 const MONTH = 2_592_000
 
 // Three display scales for the rate table. Same per-second flow, shown at each
 // scale; the example 150 / 300 / 3600 is exactly half-month / month / 12×month.
 const RATE_SCALES = [
-  { key: 'fortnight', label: 'Bi-weekly', seconds: 1_296_000 },
+  { key: 'fortnight', label: 'Half-month', seconds: 1_296_000 },
   { key: 'month', label: 'Monthly', seconds: MONTH },
   { key: 'year', label: 'Yearly', seconds: 31_104_000 },
 ]
@@ -95,7 +98,8 @@ export default function CreateStream() {
     if (activeScale === scaleKey) return activeRateText
     return amountPerSecond > 0n ? trimAmount(formatUnits(amountPerSecond * BigInt(scaleSeconds), decimals)) : ''
   }
-  function onRateChange(scaleKey: string, scaleSeconds: number, v: string) {
+  function onRateChange(scaleKey: string, scaleSeconds: number, raw: string) {
+    const v = dec(raw)
     setActiveScale(scaleKey)
     setActiveRateText(v)
     try {
@@ -117,7 +121,8 @@ export default function CreateStream() {
     [upfrontRaw, amountPerSecond, capDurationSeconds],
   )
   const capTotalValue = activeTotal !== null ? activeTotal : capDurationSeconds > 0 ? fmt(capMaxRaw) : ''
-  function onTotalChange(v: string) {
+  function onTotalChange(raw: string) {
+    const v = dec(raw)
     setActiveTotal(v)
     try {
       const totalRaw = parseUnits(v, decimals)
@@ -388,7 +393,7 @@ export default function CreateStream() {
                   <div className="text-[11px] text-faint mb-1">{s.label}</div>
                   <div className="relative">
                     <input
-                      type="number" min={0} step="any" placeholder="0"
+                      type="text" inputMode="decimal" placeholder="0"
                       value={rateCellValue(s.key, s.seconds)}
                       onChange={(e) => onRateChange(s.key, s.seconds, e.target.value)}
                       onBlur={() => { setActiveScale(null); setTouchedRate(true) }}
@@ -403,7 +408,7 @@ export default function CreateStream() {
 
           <Field label="Upfront payment">
             <div className="relative">
-              <input type="number" placeholder="0" value={upfront} onChange={(e) => setUpfront(e.target.value)} min={0} step="any" className="pr-16" />
+              <input type="text" inputMode="decimal" placeholder="0" value={upfront} onChange={(e) => setUpfront(dec(e.target.value))} className="pr-16" />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">{tokenSymbol}</span>
             </div>
           </Field>
@@ -427,7 +432,7 @@ export default function CreateStream() {
                 <div>
                   <div className="text-[11px] text-faint mb-1">Duration</div>
                   <div className="grid grid-cols-[1fr_auto] gap-1">
-                    <input type="number" min={0} step="any" placeholder="3" value={capDurationN} onChange={(e) => setCapDurationN(e.target.value)} onBlur={() => setTouchedCap(true)} className={errs.cap ? 'ring-1 ring-danger' : ''} />
+                    <input type="text" inputMode="decimal" placeholder="3" value={capDurationN} onChange={(e) => setCapDurationN(dec(e.target.value))} onBlur={() => setTouchedCap(true)} className={errs.cap ? 'ring-1 ring-danger' : ''} />
                     <select value={capDurationUnit} onChange={(e) => setCapDurationUnit(e.target.value)} className="w-auto">
                       {DURATION_UNITS.map((u) => <option key={u.key} value={u.key}>{u.label}</option>)}
                     </select>
@@ -436,7 +441,7 @@ export default function CreateStream() {
                 <div>
                   <div className="text-[11px] text-faint mb-1">Total budget</div>
                   <div className="relative">
-                    <input type="number" min={0} step="any" placeholder="900" value={capTotalValue} onChange={(e) => onTotalChange(e.target.value)} onBlur={() => { setActiveTotal(null); setTouchedCap(true) }} className={`pr-12 ${errs.cap ? 'ring-1 ring-danger' : ''}`} />
+                    <input type="text" inputMode="decimal" placeholder="900" value={capTotalValue} onChange={(e) => onTotalChange(e.target.value)} onBlur={() => { setActiveTotal(null); setTouchedCap(true) }} className={`pr-12 ${errs.cap ? 'ring-1 ring-danger' : ''}`} />
                     <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-faint">{tokenSymbol}</span>
                   </div>
                 </div>
