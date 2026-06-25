@@ -49,6 +49,10 @@ const DURATION_UNITS = [
 
 const dateStr = (sec: number) => new Date(sec * 1000).toLocaleDateString()
 const toDateInput = (sec: number) => new Date(sec * 1000).toISOString().slice(0, 10)
+// The on-chain startTime for a chosen yyyy-mm-dd (local midnight), or `nowSec` when
+// unset. Clamped to never predate now, so picking today means "now", not backdated.
+const startTimeFor = (startDate: string, nowSec: number) =>
+  startDate ? Math.max(nowSec, Math.floor(new Date(`${startDate}T00:00:00`).getTime() / 1000)) : nowSec
 
 type SignStep = 'idle' | 'building' | 'pinning' | 'signing'
 type BoundMode = 'revocation' | 'hardcap'
@@ -68,6 +72,8 @@ export default function CreateStream() {
   const [rateAmount, setRateAmount] = useState('')
   const [rateSeconds, setRateSeconds] = useState(MONTH)
   const [upfront, setUpfront] = useState('0')
+  // '' = start now; otherwise a yyyy-mm-dd date the stream begins accruing on.
+  const [startDate, setStartDate] = useState('')
   const rateRef = useRef<HTMLInputElement>(null)
   const [rateHint, setRateHint] = useState(false)
 
@@ -225,6 +231,7 @@ export default function CreateStream() {
   // ---- Preview (always shown; missing required fields render in red) ----
   const now = Math.floor(Date.now() / 1000)
   const perSecondStr = amountPerSecond > 0n ? fmt(amountPerSecond) : ''
+  const startTimePreview = startTimeFor(startDate, now)
 
   async function handleSign() {
     setSigning(true)
@@ -246,7 +253,7 @@ export default function CreateStream() {
       })) as Address
 
       const environment = getEnvironment(safe.chainId)
-      const startTime = Math.floor(Date.now() / 1000)
+      const startTime = startTimeFor(startDate, Math.floor(Date.now() / 1000))
       const aps = amountPerSecond
       const maxRaw = resolveMaxRaw()
       const ratePerPeriod = fmt(aps * BigInt(MONTH))
@@ -340,6 +347,7 @@ export default function CreateStream() {
     setRateAmount('')
     setRateSeconds(MONTH)
     setUpfront('0')
+    setStartDate('')
     setBoundMode('revocation')
     setCapDurationN('')
     setCapDurationUnit('month')
@@ -472,6 +480,36 @@ export default function CreateStream() {
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">{tokenSymbol}</span>
             </div>
           </Field>
+
+          <Field label="Start of the stream" hint={startDate ? undefined : 'Begins accruing the moment it is signed.'}>
+            {/* Native date input drives the picker directly (showPicker() is blocked in
+                the Safe cross-origin iframe). Its text is hidden and the picker indicator
+                is stretched to fill the field, so a click anywhere opens the calendar,
+                while the overlay shows "Now" / the chosen date. */}
+            <div className="relative">
+              <input
+                type="date" lang="en"
+                aria-label={`Start of the stream: ${startDate ? dateStr(startTimePreview) : 'now'}`}
+                min={toDateInput(now)}
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="date-input w-full pl-9"
+              />
+              <IconCal size={14} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-faint" />
+              <span className="pointer-events-none absolute left-9 top-1/2 -translate-y-1/2 text-sm text-ink">
+                {startDate ? dateStr(startTimePreview) : 'Now'}
+              </span>
+              {startDate && (
+                <button
+                  type="button"
+                  onClick={() => setStartDate('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 z-10 rounded-md px-1.5 py-0.5 text-[11px] text-faint hover:text-ink hover:bg-raised transition"
+                >
+                  Now
+                </button>
+              )}
+            </div>
+          </Field>
         </Block>
 
         {/* Block 3 — Security / limit */}
@@ -544,6 +582,10 @@ export default function CreateStream() {
           </PreviewRow>
 
           <PreviewRow label="Upfront"><span className="font-mono text-ink">{trimAmount(upfront || '0')} {tokenSymbol}</span></PreviewRow>
+
+          <PreviewRow label="Starts">
+            {startDate ? <span className="font-mono text-ink">{dateStr(startTimePreview)}</span> : <span className="text-ink">Now</span>}
+          </PreviewRow>
 
           <PreviewRow label="Token">
             <span className="text-ink text-xs">{tokenSymbol}{useCustomToken && tokenMeta?.name ? ` · ${tokenMeta.name}` : ''}</span>
