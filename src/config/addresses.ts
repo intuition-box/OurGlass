@@ -81,7 +81,7 @@ export const addresses: Record<number, ChainAddresses> = {
   // spec/ourglass-enforcer-instances.md.
   1: {
     delegationManager: DELEGATION_MANAGER,
-    delegatorModuleFactory: '0xbDDe43bcF6db9DBeB1127e6574ccF70bFb1c2dc3' as Address,
+    delegatorModuleFactory: '0xbDDE43bCf6Db9DBeB1127E6574CCF70BFb1c2DC3' as Address,
     ...SHARED_ENFORCERS,
     ourglass: {
       erc20PeriodTransferEnforcer: '0x11262E3116a50654547AB0A417BE77eB14b9F339' as Address,
