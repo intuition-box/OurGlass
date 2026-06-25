@@ -102,12 +102,14 @@ export default function CreateStream() {
     setTokenStatus('loading')
     ;(async () => {
       try {
-        const [d, symbol, name] = await Promise.all([
-          client.readContract({ address: customToken as Address, abi: erc20Abi, functionName: 'decimals' }),
-          client.readContract({ address: customToken as Address, abi: erc20Abi, functionName: 'symbol' }),
-          client.readContract({ address: customToken as Address, abi: erc20Abi, functionName: 'name' }),
+        // decimals is the only field the math needs; name/symbol are best-effort
+        // (some weird tokens like USDT return bytes32 / non-standard types).
+        const d = await client.readContract({ address: customToken as Address, abi: erc20Abi, functionName: 'decimals' })
+        const [symbol, name] = await Promise.all([
+          client.readContract({ address: customToken as Address, abi: erc20Abi, functionName: 'symbol' }).catch(() => ''),
+          client.readContract({ address: customToken as Address, abi: erc20Abi, functionName: 'name' }).catch(() => ''),
         ])
-        if (!cancelled) { setTokenMeta({ name, symbol, decimals: d }); setTokenStatus('ok') }
+        if (!cancelled) { setTokenMeta({ name: name as string, symbol: (symbol as string) || '?', decimals: d }); setTokenStatus('ok') }
       } catch {
         if (!cancelled) { setTokenMeta(null); setTokenStatus('error') }
       }
