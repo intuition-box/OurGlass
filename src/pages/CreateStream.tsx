@@ -493,9 +493,9 @@ export default function CreateStream() {
               </div>
               <div className="p-3">
                 <div className="text-[11px] text-faint mb-1.5 text-center uppercase tracking-wide">Duration</div>
-                <div className="flex gap-1">
-                  <input type="text" inputMode="decimal" placeholder="3" value={capDurationN} onChange={(e) => setCapDurationN(clampDur(dec(e.target.value)))} onBlur={() => setTouchedCap(true)} className="w-full min-w-0" />
-                  <select value={capDurationUnit} onChange={(e) => setCapDurationUnit(e.target.value)} className="w-auto shrink-0">
+                <div className="space-y-1.5">
+                  <input type="text" inputMode="decimal" placeholder="3" value={capDurationN} onChange={(e) => setCapDurationN(clampDur(dec(e.target.value)))} onBlur={() => setTouchedCap(true)} className="w-full" />
+                  <select value={capDurationUnit} onChange={(e) => setCapDurationUnit(e.target.value)} className="w-full">
                     {DURATION_UNITS.map((u) => <option key={u.key} value={u.key}>{u.label}</option>)}
                   </select>
                 </div>
