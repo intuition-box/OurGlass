@@ -1,17 +1,7 @@
 import { http, createConfig } from 'wagmi'
-import { type Chain } from 'viem'
-import { mainnet, baseSepolia, base, sepolia, foundry } from 'wagmi/chains'
+import { mainnet, baseSepolia, base, sepolia } from 'wagmi/chains'
 import { safe, injected } from 'wagmi/connectors'
-
-// Anvil local chain (Base Sepolia fork)
-export const anvilLocal: Chain = {
-  ...foundry,
-  id: 31337,
-  name: 'Anvil (Local)',
-  rpcUrls: {
-    default: { http: ['http://127.0.0.1:8545'] },
-  },
-}
+import { anvilLocal } from './supported-chains'
 
 export const wagmiConfig = createConfig({
   chains: [mainnet, baseSepolia, sepolia, base, anvilLocal],

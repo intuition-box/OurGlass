@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useSafeAppsSDK } from '@safe-global/safe-apps-react-sdk'
 import { createPublicClient, http, isAddress, parseUnits, type Address, type Hex } from 'viem'
-import { mainnet, baseSepolia, base, sepolia } from 'viem/chains'
 import { createDelegation } from '@metamask/smart-accounts-kit'
 import { DeleGatorModuleFactoryABI } from '../config/abis'
 import { getAddresses } from '../config/addresses'
@@ -21,16 +20,8 @@ import { getEnvironment } from '../lib/environment'
 import { saveDelegation, type StoredDelegation } from '../lib/storage'
 import { Card, Btn, GaslessButton, USDC, Mono, CopyChip, Payee, StatusBadge } from '../ui/components'
 import { IconCube, IconLock, IconCheck, IconExt, IconHash, IconCal } from '../ui/icons'
+import { findChain, USDC_ADDRESS } from '../config/supported-chains'
 
-const chains: Record<number, typeof mainnet | typeof baseSepolia | typeof base | typeof sepolia> = { 1: mainnet, 84532: baseSepolia, 11155111: sepolia, 8453: base }
-
-// USDC is the subscription settlement token on every supported chain (6 decimals).
-const USDC_BY_CHAIN: Record<number, Address> = {
-  1: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
-  84532: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
-  11155111: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
-  8453: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
-}
 const PERIODS: PeriodType[] = ['minutely', 'daily', 'weekly', 'monthly']
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
 
@@ -82,7 +73,7 @@ export default function CreateDelegation() {
   const [signed, setSigned] = useState<StoredDelegation | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const defaultUsdc = USDC_BY_CHAIN[safe.chainId]
+  const defaultUsdc = USDC_ADDRESS[safe.chainId]
   const tokenAddress = useCustomToken ? customToken : defaultUsdc
   const tokenDecimals = useCustomToken ? customDecimals : 6
   const tokenSymbol = useCustomToken ? 'tokens' : 'USDC'
@@ -120,7 +111,7 @@ export default function CreateDelegation() {
     try {
       // The payee is the delegate: it redeems the delegation directly on-chain.
       const delegate = recipient as Address
-      const chain = chains[safe.chainId]
+      const chain = findChain(safe.chainId)
       if (!chain) throw new Error(`Unsupported chain: ${safe.chainId}`)
       const client = createPublicClient({ chain, transport: http() })
       const addrs = getAddresses(safe.chainId)

@@ -12,12 +12,12 @@ import {
   encodePacked,
   pad,
 } from 'viem'
-import { mainnet, base, baseSepolia, sepolia } from 'viem/chains'
 import { DeleGatorModuleFactoryABI } from '../config/abis'
 import { getAddresses } from '../config/addresses'
 import { DEFAULT_SALT } from '../lib/module'
 import { Card, Btn, Mono, CopyChip } from '../ui/components'
 import { IconWallet, IconCheck, IconAlert, IconRepeat } from '../ui/icons'
+import { findChain } from '../config/supported-chains'
 
 const KNOWN_TOKENS: { address: Address; symbol: string; decimals: number }[] = [
   { address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', symbol: 'USDC', decimals: 6 }, // Ethereum
@@ -36,7 +36,6 @@ const ERC20_ABI = parseAbi([
 const SINGLE_DEFAULT_MODE: Hex = pad('0x00', { size: 32 })
 const MODULE_EXECUTE_ABI = parseAbi(['function execute(bytes32 mode, bytes calldata executionCalldata) payable'])
 
-const chains: Record<number, typeof mainnet | typeof baseSepolia | typeof base | typeof sepolia> = { 1: mainnet, 84532: baseSepolia, 11155111: sepolia, 8453: base }
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
 
 interface TokenBalance {
@@ -59,7 +58,7 @@ export default function ModuleTransfer() {
   const [error, setError] = useState('')
 
   const chainId = safe.chainId
-  const chain = chains[chainId]
+  const chain = findChain(chainId)
 
   const getClient = useCallback(() => (chain ? createPublicClient({ chain, transport: http() }) : null), [chain])
 
