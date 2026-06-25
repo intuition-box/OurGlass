@@ -60,9 +60,8 @@ export default function CreateStream() {
   const [useCustomToken, setUseCustomToken] = useState(false)
   const [customToken, setCustomToken] = useState('')
   const [customDecimals, setCustomDecimals] = useState(6)
-  const [amountPerSecond, setAmountPerSecond] = useState<bigint>(0n)
-  const [activeScale, setActiveScale] = useState<string | null>(null)
-  const [activeRateText, setActiveRateText] = useState('')
+  const [rateAmount, setRateAmount] = useState('')
+  const [rateSeconds, setRateSeconds] = useState(MONTH)
   const [upfront, setUpfront] = useState('0')
 
   // Block 3 — Security / limit
@@ -93,20 +92,28 @@ export default function CreateStream() {
     try { return parseUnits(upfront || '0', decimals) } catch { return 0n }
   }, [upfront, decimals])
 
-  // ---- Rate table (pivot = amountPerSecond) ----
-  function rateCellValue(scaleKey: string, scaleSeconds: number) {
-    if (activeScale === scaleKey) return activeRateText
-    return amountPerSecond > 0n ? trimAmount(formatUnits(amountPerSecond * BigInt(scaleSeconds), decimals)) : ''
-  }
-  function onRateChange(scaleKey: string, scaleSeconds: number, raw: string) {
-    const v = dec(raw)
-    setActiveScale(scaleKey)
-    setActiveRateText(v)
+  // ---- Rate table ----
+  // Cells interlink on the EXACT entered amount (proportional, no quantization),
+  // so editing one updates the others 1:1. amountPerSecond is the ceil'd on-chain
+  // value, derived only for the preview and signing.
+  const amountPerSecond = useMemo<bigint>(() => {
+    if (!rateAmount || !tokenValid) return 0n
     try {
-      setAmountPerSecond(v && parseFloat(v) > 0 ? perSecondForTotal(parseUnits(v, decimals), scaleSeconds) : 0n)
-    } catch {
-      /* partial input */
-    }
+      const total = parseUnits(rateAmount, decimals)
+      return total > 0n ? perSecondForTotal(total, rateSeconds) : 0n
+    } catch { return 0n }
+  }, [rateAmount, rateSeconds, tokenValid, decimals])
+
+  function rateCellValue(scaleSeconds: number) {
+    if (scaleSeconds === rateSeconds) return rateAmount
+    if (!rateAmount) return ''
+    try {
+      return trimAmount(formatUnits((parseUnits(rateAmount, decimals) * BigInt(scaleSeconds)) / BigInt(rateSeconds), decimals))
+    } catch { return '' }
+  }
+  function onRateChange(scaleSeconds: number, raw: string) {
+    setRateSeconds(scaleSeconds)
+    setRateAmount(dec(raw))
   }
 
   // ---- Hard-cap table (pivot = capDurationSeconds, derived from the duration cell) ----
@@ -293,9 +300,8 @@ export default function CreateStream() {
     setSigned(null)
     setBeneficiaryName('')
     setRecipient('')
-    setAmountPerSecond(0n)
-    setActiveScale(null)
-    setActiveRateText('')
+    setRateAmount('')
+    setRateSeconds(MONTH)
     setUpfront('0')
     setBoundMode('revocation')
     setCapDurationN('')
@@ -396,9 +402,9 @@ export default function CreateStream() {
                   <div className="relative">
                     <input
                       type="text" inputMode="decimal" placeholder="0"
-                      value={rateCellValue(s.key, s.seconds)}
-                      onChange={(e) => onRateChange(s.key, s.seconds, e.target.value)}
-                      onBlur={() => { setActiveScale(null); setTouchedRate(true) }}
+                      value={rateCellValue(s.seconds)}
+                      onChange={(e) => onRateChange(s.seconds, e.target.value)}
+                      onBlur={() => setTouchedRate(true)}
                       className={`pr-12 ${errs.rate ? 'ring-1 ring-danger' : ''}`}
                     />
                     <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-faint">{tokenSymbol}</span>
