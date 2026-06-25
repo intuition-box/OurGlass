@@ -28,16 +28,11 @@ import {
   type RateUnitKey,
 } from '../lib/streamRate'
 import { getEnvironment } from '../lib/environment'
-import { findChain } from '../config/supported-chains'
+import { findChain, USDC_ADDRESS } from '../config/supported-chains'
 import { saveDelegation, type StoredDelegation } from '../lib/storage'
 import { Card, Btn, GaslessButton, USDC, Mono, CopyChip, Payee } from '../ui/components'
 import { IconCube, IconLock, IconCheck, IconExt, IconHash, IconRepeat, IconCal } from '../ui/icons'
 
-const USDC_BY_CHAIN: Record<number, Address> = {
-  84532: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
-  11155111: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
-  8453: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
-}
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
 const trimAmount = (s: string) => (s.includes('.') ? s.replace(/\.?0+$/, '') : s)
 const dateStr = (unixSeconds: number) => new Date(unixSeconds * 1000).toLocaleDateString()
@@ -89,7 +84,7 @@ export default function CreateStream() {
   const [signed, setSigned] = useState<StoredDelegation | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const defaultUsdc = USDC_BY_CHAIN[safe.chainId]
+  const defaultUsdc = USDC_ADDRESS[safe.chainId]
   const tokenAddress = useCustomToken ? customToken : defaultUsdc
   const decimals = useCustomToken ? customDecimals : 6
   const tokenSymbol = useCustomToken ? 'tokens' : 'USDC'
