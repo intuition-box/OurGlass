@@ -1,10 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSafeAppsSDK } from '@safe-global/safe-apps-react-sdk'
 import { createPublicClient, http, isAddress, parseUnits, formatUnits, type Address, type Hex } from 'viem'
-import { baseSepolia, base, sepolia } from 'viem/chains'
 import { createDelegation } from '@metamask/smart-accounts-kit'
 import { DeleGatorModuleFactoryABI } from '../config/abis'
 import { getAddresses } from '../config/addresses'
+import { findChain, USDC_ADDRESS, chainName } from '../config/supported-chains'
 import { DEFAULT_SALT } from '../lib/module'
 import { buildDelegationTypedData, computeDelegationHash, type DelegationStruct } from '../lib/delegations'
 import { ipfsToHttp, type PinResult } from '../lib/subscriptionTerms'
@@ -13,195 +13,218 @@ import {
   buildStreamAgreement,
   pinStreamAgreement,
   offlinePinStream,
-  streamedAvailable,
 } from '../lib/streamTerms'
-import {
-  RATE_UNITS,
-  MAX_UINT256,
-  rateToPerSecond,
-  perSecondForTotal,
-  perSecondToRate,
-  rateBreakdown,
-  secondsToBudget,
-  budgetByEndTime,
-  humanDuration,
-  unitSeconds,
-  type RateUnitKey,
-} from '../lib/streamRate'
+import { MAX_UINT256, perSecondForTotal } from '../lib/streamRate'
+import { readErc20Meta } from '../lib/erc20'
 import { getEnvironment } from '../lib/environment'
-import { saveDelegation, type StoredDelegation } from '../lib/storage'
+import { saveDelegation, getDelegations, type StoredDelegation } from '../lib/storage'
 import { Card, Btn, GaslessButton, USDC, Mono, CopyChip, Payee } from '../ui/components'
-import { IconCube, IconLock, IconCheck, IconExt, IconHash, IconRepeat, IconCal } from '../ui/icons'
+import { IconCube, IconLock, IconCheck, IconExt, IconHash, IconCal } from '../ui/icons'
 
-const chains: Record<number, typeof baseSepolia | typeof base | typeof sepolia> = { 84532: baseSepolia, 11155111: sepolia, 8453: base }
-
-const USDC_BY_CHAIN: Record<number, Address> = {
-  84532: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
-  11155111: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
-  8453: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
-}
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
 const trimAmount = (s: string) => (s.includes('.') ? s.replace(/\.?0+$/, '') : s)
-const dateStr = (unixSeconds: number) => new Date(unixSeconds * 1000).toLocaleDateString()
+const trimNum = (n: number) => (Number.isFinite(n) ? String(Math.round(n * 100) / 100) : '')
+// Lock an amount field to a dot decimal: comma → dot, strip anything that isn't
+// a digit or a dot (point everywhere, no letters/symbols).
+const dec = (v: string) => v.replace(',', '.').replace(/[^\d.]/g, '')
+// Duration is a positive number capped at 999 (per unit).
+const clampDur = (v: string) => { const n = parseFloat(v); return Number.isFinite(n) && n > 999 ? '999' : v }
 
-type SignStep = 'idle' | 'building' | 'pinning' | 'signing'
-type SetupMode = 'vesting' | 'custom'
-type BoundMode = 'unbounded' | 'budget' | 'enddate'
+const MONTH = 2_592_000
 
-const BOUND_MODES: { key: BoundMode; label: string }[] = [
-  { key: 'unbounded', label: 'Until revoked' },
-  { key: 'budget', label: 'Total budget' },
-  { key: 'enddate', label: 'End date' },
+// Three display scales for the rate table. Same per-second flow, shown at each
+// scale; the example 150 / 300 / 3600 is exactly half-month / month / 12×month.
+const RATE_SCALES = [
+  { key: 'fortnight', label: 'Half-month', seconds: 1_296_000 },
+  { key: 'month', label: 'Monthly', seconds: MONTH },
+  { key: 'year', label: 'Yearly', seconds: 31_104_000 },
 ]
 
-const DURATION_UNITS: { key: string; label: string; seconds: number }[] = [
+const DURATION_UNITS = [
   { key: 'year', label: 'years', seconds: 31_557_600 },
   { key: 'month', label: 'months', seconds: 2_592_000 },
   { key: 'week', label: 'weeks', seconds: 604_800 },
   { key: 'day', label: 'days', seconds: 86_400 },
 ]
 
+const dateStr = (sec: number) => new Date(sec * 1000).toLocaleDateString()
+const toDateInput = (sec: number) => new Date(sec * 1000).toISOString().slice(0, 10)
+
+type SignStep = 'idle' | 'building' | 'pinning' | 'signing'
+type BoundMode = 'revocation' | 'hardcap'
+
 export default function CreateStream() {
   const { sdk, safe } = useSafeAppsSDK()
 
-  const [setupMode, setSetupMode] = useState<SetupMode>('vesting')
+  // Block 1 — Beneficiary
   const [beneficiaryName, setBeneficiaryName] = useState('')
   const [recipient, setRecipient] = useState('')
 
-  // Vesting inputs
-  const [vestTotal, setVestTotal] = useState('')
-  const [vestN, setVestN] = useState('4')
-  const [vestUnit, setVestUnit] = useState('year')
-
-  // Custom-rate inputs
-  const [rateInput, setRateInput] = useState('')
-  const [rateUnit, setRateUnit] = useState<RateUnitKey>('month')
-  const [boundMode, setBoundMode] = useState<BoundMode>('unbounded')
-  const [budgetAmount, setBudgetAmount] = useState('')
-  const [endDate, setEndDate] = useState('')
-  const [initialAmount, setInitialAmount] = useState('0')
-
+  // Block 2 — Payment details
   const [useCustomToken, setUseCustomToken] = useState(false)
   const [customToken, setCustomToken] = useState('')
-  const [customDecimals, setCustomDecimals] = useState(6)
+  const [tokenMeta, setTokenMeta] = useState<{ name: string; symbol: string; decimals: number } | null>(null)
+  const [tokenStatus, setTokenStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle')
+  const [rateAmount, setRateAmount] = useState('')
+  const [rateSeconds, setRateSeconds] = useState(MONTH)
+  const [upfront, setUpfront] = useState('0')
+  const rateRef = useRef<HTMLInputElement>(null)
+  const [rateHint, setRateHint] = useState(false)
+
+  // Block 3 — Security / limit
+  const [boundMode, setBoundMode] = useState<BoundMode>('revocation')
+  const [capDurationN, setCapDurationN] = useState('')
+  const [capDurationUnit, setCapDurationUnit] = useState('month')
+  const [activeTotal, setActiveTotal] = useState<string | null>(null)
 
   const [signing, setSigning] = useState(false)
   const [step, setStep] = useState<SignStep>('idle')
   const [pinnedCid, setPinnedCid] = useState<string | null>(null)
   const [signed, setSigned] = useState<StoredDelegation | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // A field turns red only once it's been touched (focused then left) still invalid.
+  const [touchedBene, setTouchedBene] = useState(false)
+  const [touchedRate, setTouchedRate] = useState(false)
+  const [touchedCap, setTouchedCap] = useState(false)
 
-  const defaultUsdc = USDC_BY_CHAIN[safe.chainId]
+  const defaultUsdc = USDC_ADDRESS[safe.chainId]
   const tokenAddress = useCustomToken ? customToken : defaultUsdc
-  const decimals = useCustomToken ? customDecimals : 6
-  const tokenSymbol = useCustomToken ? 'tokens' : 'USDC'
+  const decimals = useCustomToken ? (tokenMeta?.decimals ?? 6) : 6
+  const tokenSymbol = useCustomToken ? (tokenMeta?.symbol ?? 'tokens') : 'USDC'
   const recipientValid = isAddress(recipient)
-  const tokenValid = !!tokenAddress && isAddress(tokenAddress)
-  const isVesting = setupMode === 'vesting'
+  const tokenValid = useCustomToken ? (isAddress(customToken) && tokenStatus === 'ok') : (!!tokenAddress && isAddress(tokenAddress))
 
-  // ---- Vesting derived ----
-  const durationSeconds = useMemo(() => {
-    const u = DURATION_UNITS.find((d) => d.key === vestUnit)
-    const n = parseFloat(vestN)
-    return u && Number.isFinite(n) && n > 0 ? Math.round(n * u.seconds) : 0
-  }, [vestN, vestUnit])
-  const totalRaw = useMemo<bigint>(() => {
-    try { return vestTotal ? parseUnits(vestTotal, decimals) : 0n } catch { return 0n }
-  }, [vestTotal, decimals])
-  const vestValid = totalRaw > 0n && durationSeconds > 0
+  // Resolve a custom token's name / symbol / decimals straight from the contract.
+  useEffect(() => {
+    if (!useCustomToken || !isAddress(customToken)) { setTokenMeta(null); setTokenStatus('idle'); return }
+    const chain = findChain(safe.chainId)
+    if (!chain) { setTokenStatus('error'); return }
+    const client = createPublicClient({ chain, transport: http() })
+    let cancelled = false
+    setTokenStatus('loading')
+    ;(async () => {
+      try {
+        const meta = await readErc20Meta(client, customToken as Address)
+        if (!cancelled) { setTokenMeta(meta); setTokenStatus('ok') }
+      } catch (e) {
+        console.error('token resolve failed', e)
+        if (!cancelled) { setTokenMeta(null); setTokenStatus('error') }
+      }
+    })()
+    return () => { cancelled = true }
+  }, [useCustomToken, customToken, safe.chainId])
 
-  // ---- Custom-rate derived ----
-  const rateValid = !!rateInput && parseFloat(rateInput) > 0
-  const customInitialRaw = useMemo<bigint>(() => {
-    try { return parseUnits(initialAmount || '0', decimals) } catch { return 0n }
-  }, [initialAmount, decimals])
-  const budgetRaw = useMemo<bigint>(() => {
-    if (boundMode !== 'budget' || !budgetAmount) return 0n
-    try { return parseUnits(budgetAmount, decimals) } catch { return 0n }
-  }, [boundMode, budgetAmount, decimals])
+  const fmt = (raw: bigint) => trimAmount(formatUnits(raw, decimals))
+  const upfrontRaw = useMemo<bigint>(() => {
+    try { return parseUnits(upfront || '0', decimals) } catch { return 0n }
+  }, [upfront, decimals])
 
-  // ---- Unified on-chain params ----
-  // Per-second flow is the on-chain truth. Vesting derives it from total/duration
-  // (ceil); custom takes it from the entered rate.
+  // ---- Rate table ----
+  // Cells interlink on the EXACT entered amount (proportional, no quantization),
+  // so editing one updates the others 1:1. amountPerSecond is the ceil'd on-chain
+  // value, derived only for the preview and signing.
   const amountPerSecond = useMemo<bigint>(() => {
-    if (!tokenValid) return 0n
+    if (!rateAmount || !tokenValid) return 0n
     try {
-      return isVesting
-        ? (vestValid ? perSecondForTotal(totalRaw, durationSeconds) : 0n)
-        : (rateValid ? rateToPerSecond(rateInput, rateUnit, decimals) : 0n)
+      const total = parseUnits(rateAmount, decimals)
+      return total > 0n ? perSecondForTotal(total, rateSeconds) : 0n
     } catch { return 0n }
-  }, [isVesting, vestValid, totalRaw, durationSeconds, rateValid, rateInput, rateUnit, decimals, tokenValid])
+  }, [rateAmount, rateSeconds, tokenValid, decimals])
 
-  const initialRaw = isVesting ? 0n : customInitialRaw
+  function rateCellValue(scaleSeconds: number) {
+    if (scaleSeconds === rateSeconds) return rateAmount
+    if (!rateAmount) return ''
+    try {
+      return trimAmount(formatUnits((parseUnits(rateAmount, decimals) * BigInt(scaleSeconds)) / BigInt(rateSeconds), decimals))
+    } catch { return '' }
+  }
+  function onRateChange(scaleSeconds: number, raw: string) {
+    setRateSeconds(scaleSeconds)
+    setRateAmount(dec(raw))
+  }
 
-  // The rate re-expressed at the display unit (snapped — what the caveat streams).
-  const displayUnit: RateUnitKey = isVesting ? 'month' : rateUnit
-  const effectiveRate = useMemo(
-    () => (amountPerSecond > 0n ? trimAmount(perSecondToRate(amountPerSecond, displayUnit, decimals)) : ''),
-    [amountPerSecond, displayUnit, decimals],
+  // ---- Hard-cap table (pivot = capDurationSeconds, derived from the duration cell) ----
+  const capDurationSeconds = useMemo(() => {
+    const u = DURATION_UNITS.find((d) => d.key === capDurationUnit)
+    const n = parseFloat(capDurationN)
+    return u && n > 0 ? Math.round(n * u.seconds) : 0
+  }, [capDurationN, capDurationUnit])
+
+  const capMaxRaw = useMemo<bigint>(
+    () => upfrontRaw + amountPerSecond * BigInt(capDurationSeconds),
+    [upfrontRaw, amountPerSecond, capDurationSeconds],
   )
-
-  // Snap the custom-rate field to the exact encodable value on blur / unit change.
-  function snapRate(toUnit: RateUnitKey) {
-    if (rateValid) {
-      const aps = rateToPerSecond(rateInput, rateUnit, decimals)
-      setRateInput(trimAmount(perSecondToRate(aps, toUnit, decimals)))
+  const capTotalValue = activeTotal !== null ? activeTotal : capDurationSeconds > 0 ? fmt(capMaxRaw) : ''
+  function onTotalChange(raw: string) {
+    const v = dec(raw)
+    setActiveTotal(v)
+    try {
+      const totalRaw = parseUnits(v, decimals)
+      if (amountPerSecond > 0n && totalRaw > upfrontRaw) {
+        const secs = Number((totalRaw - upfrontRaw) / amountPerSecond)
+        const u = DURATION_UNITS.find((d) => d.key === capDurationUnit)!
+        setCapDurationN(trimNum(secs / u.seconds))
+      }
+    } catch {
+      /* partial input */
     }
-    setRateUnit(toUnit)
   }
 
-  // Resolve the enforcer maxAmount at timestamp `now`.
-  function resolveMaxRaw(now: number): bigint {
-    if (isVesting) return totalRaw // exact total — the cap is the source of truth
-    if (boundMode === 'budget') return budgetRaw
-    if (boundMode === 'enddate') {
-      const endSec = endDate ? Math.floor(new Date(endDate).getTime() / 1000) : now
-      return budgetByEndTime(amountPerSecond, now, endSec, initialRaw)
+  function onEndDateChange(v: string) {
+    const endSec = Math.floor(new Date(v).getTime() / 1000)
+    const nowSec = Math.floor(Date.now() / 1000)
+    if (Number.isFinite(endSec) && endSec > nowSec) {
+      const u = DURATION_UNITS.find((d) => d.key === capDurationUnit)!
+      setCapDurationN(trimNum((endSec - nowSec) / u.seconds))
     }
-    return MAX_UINT256
   }
+
+  // Beneficiary autocomplete: Safe owners first, then recent recipients (local).
+  const beneficiarySuggestions = useMemo(() => {
+    const out: { value: string; label: string }[] = []
+    const seen = new Set<string>()
+    for (const o of safe.owners ?? []) {
+      if (!seen.has(o.toLowerCase())) { seen.add(o.toLowerCase()); out.push({ value: o, label: 'Safe owner' }) }
+    }
+    for (const d of getDelegations()) {
+      const r = d.meta.recipient
+      if (r && !seen.has(r.toLowerCase())) { seen.add(r.toLowerCase()); out.push({ value: r, label: d.meta.label || 'Recent' }) }
+    }
+    return out
+  }, [safe.owners])
 
   // ---- Validation ----
-  const budgetBelowInitial = boundMode === 'budget' && !!budgetAmount && budgetRaw < customInitialRaw
-  const budgetValid = boundMode !== 'budget' || (parseFloat(budgetAmount) > 0 && !budgetBelowInitial)
-  const endValid = boundMode !== 'enddate' || (!!endDate && new Date(endDate).getTime() / 1000 > Math.floor(Date.now() / 1000))
-  const customValid = rateValid && budgetValid && endValid
-  const canSign = amountPerSecond > 0n && recipientValid && tokenValid && (isVesting ? vestValid : customValid) && !signing
-
-  // ---- Preview ----
-  const preview = useMemo(() => {
-    if (amountPerSecond <= 0n || !tokenValid) return null
-    if (isVesting ? !vestValid : !customValid) return null
-    const now = Math.floor(Date.now() / 1000)
-    const maxRaw = resolveMaxRaw(now)
-    const bd = rateBreakdown(amountPerSecond, decimals)
-    const unbounded = maxRaw === MAX_UINT256
-    const afterOne = streamedAvailable({
-      amountPerSecondRaw: amountPerSecond.toString(),
-      initialAmountRaw: initialRaw.toString(),
-      maxAmountRaw: maxRaw.toString(),
-      startTime: 0,
-      nowSeconds: unitSeconds(displayUnit),
-    })
-    const endsAt = isVesting
-      ? now + durationSeconds
-      : boundMode === 'enddate' && endDate
-        ? Math.floor(new Date(endDate).getTime() / 1000)
-        : boundMode === 'budget'
-          ? now + secondsToBudget(amountPerSecond, maxRaw, initialRaw)
-          : null
-    return {
-      perSecond: bd.second,
-      perDay: bd.day,
-      perMonth: bd.month,
-      afterOne: formatUnits(afterOne, decimals),
-      unbounded,
-      totalStr: unbounded ? null : trimAmount(formatUnits(maxRaw, decimals)),
-      endsAt,
-      lasts: unbounded ? null : humanDuration(secondsToBudget(amountPerSecond, maxRaw, initialRaw)),
+  const rateValid = amountPerSecond > 0n
+  const capValid = boundMode === 'revocation' || capDurationSeconds > 0
+  const ready = recipientValid && rateValid && tokenValid && capValid
+  // A required field shows red only once touched (focused then left) and still invalid.
+  const errs = {
+    beneficiary: touchedBene && !recipientValid,
+    rate: touchedRate && !rateValid,
+    cap: touchedCap && boundMode === 'hardcap' && capDurationSeconds <= 0,
+  }
+  function onSignClick() {
+    if (!ready) { setTouchedBene(true); setTouchedRate(true); setTouchedCap(true); return }
+    handleSign()
+  }
+  // A hard cap is defined relative to the rate, so the rate must exist first.
+  function onLimitChange(mode: BoundMode) {
+    if (mode === 'hardcap' && !rateValid) {
+      setRateHint(true)
+      rateRef.current?.focus()
+      return
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isVesting, amountPerSecond, vestValid, customValid, tokenValid, totalRaw, durationSeconds, boundMode, budgetRaw, endDate, initialRaw, displayUnit, decimals])
+    setRateHint(false)
+    setBoundMode(mode)
+  }
+
+  function resolveMaxRaw(): bigint {
+    return boundMode === 'revocation' ? MAX_UINT256 : capMaxRaw
+  }
+
+  // ---- Preview (always shown; missing required fields render in red) ----
+  const now = Math.floor(Date.now() / 1000)
+  const perSecondStr = amountPerSecond > 0n ? fmt(amountPerSecond) : ''
 
   async function handleSign() {
     setSigning(true)
@@ -210,7 +233,7 @@ export default function CreateStream() {
     setError(null)
     try {
       const delegate = recipient as Address
-      const chain = chains[safe.chainId]
+      const chain = findChain(safe.chainId)
       if (!chain) throw new Error(`Unsupported chain: ${safe.chainId}`)
       const client = createPublicClient({ chain, transport: http() })
       const addrs = getAddresses(safe.chainId)
@@ -223,25 +246,24 @@ export default function CreateStream() {
       })) as Address
 
       const environment = getEnvironment(safe.chainId)
-      const now = Math.floor(Date.now() / 1000)
+      const startTime = Math.floor(Date.now() / 1000)
       const aps = amountPerSecond
-      const maxRaw = resolveMaxRaw(now)
-      const ratePerPeriod = trimAmount(perSecondToRate(aps, displayUnit, decimals))
+      const maxRaw = resolveMaxRaw()
+      const ratePerPeriod = fmt(aps * BigInt(MONTH))
 
-      // Pin the human-readable contract and bind the signature to it: salt = keccak256(terms).
       const terms = buildStreamTerms({
         organization: { name: beneficiaryName || 'Beneficiary', recipient: recipient as Address, delegate },
-        subscriber: { label: 'Safe', account: safe.safeAddress as Address },
+        subscriber: { label: 'Payer', account: safe.safeAddress as Address },
         token: { address: tokenAddress as Address, symbol: tokenSymbol, decimals },
         ratePerPeriod,
-        ratePeriodSeconds: unitSeconds(displayUnit),
+        ratePeriodSeconds: MONTH,
         amountPerSecondRaw: aps.toString(),
-        initialAmountRaw: initialRaw.toString(),
+        initialAmountRaw: upfrontRaw.toString(),
         maxAmountRaw: maxRaw.toString(),
-        startTime: now,
+        startTime,
       })
       const agreement = buildStreamAgreement({
-        id: `stream_${now}_${(safe.safeAddress as string).slice(2, 10).toLowerCase()}`,
+        id: `stream_${startTime}_${(safe.safeAddress as string).slice(2, 10).toLowerCase()}`,
         chainId: safe.chainId,
         terms,
       })
@@ -249,7 +271,6 @@ export default function CreateStream() {
       const jwt = import.meta.env.VITE_PINATA_JWT
       const pin: PinResult = jwt ? await pinStreamAgreement(agreement, jwt) : offlinePinStream(agreement)
       setPinnedCid(pin.cid)
-      const salt = agreement.termsHash
 
       const sdkDelegation = createDelegation({
         to: delegate,
@@ -258,12 +279,12 @@ export default function CreateStream() {
         scope: {
           type: 'erc20Streaming',
           tokenAddress: tokenAddress as Address,
-          initialAmount: initialRaw,
+          initialAmount: upfrontRaw,
           maxAmount: maxRaw,
           amountPerSecond: aps,
-          startTime: now,
+          startTime,
         } as never,
-        salt,
+        salt: agreement.termsHash,
       }) as { delegate: Address; delegator: Address; authority: Hex; caveats: { enforcer: Address; terms: Hex }[]; salt: Hex }
 
       const delegation: DelegationStruct = {
@@ -280,14 +301,10 @@ export default function CreateStream() {
       const result = (await sdk.txs.signTypedMessage(typedData as never)) as { signature?: Hex; safeTxHash?: Hex }
       const delegationHash = computeDelegationHash(delegation)
 
-      const label = beneficiaryName || (isVesting
-        ? `${vestTotal} ${tokenSymbol} over ${trimAmount(vestN)} ${vestUnit}`
-        : `${ratePerPeriod} ${tokenSymbol}/${rateUnit} stream`)
-
       const stored: StoredDelegation = {
         delegation: { ...delegation, signature: (result?.signature || result?.safeTxHash || '0x') as Hex },
         meta: {
-          label,
+          label: beneficiaryName || `${ratePerPeriod} ${tokenSymbol}/month stream`,
           scopeType: 'erc20Streaming',
           createdAt: new Date().toISOString(),
           chainId: safe.chainId,
@@ -299,11 +316,11 @@ export default function CreateStream() {
           tokenAddress: tokenAddress as Address,
           recipient: recipient as Address,
           amountPerSecond: aps.toString(),
-          initialAmount: initialRaw.toString(),
+          initialAmount: upfrontRaw.toString(),
           maxAmount: maxRaw.toString(),
-          startTime: now,
+          startTime,
           ratePerPeriod,
-          ratePeriod: displayUnit,
+          ratePeriod: 'month',
         },
       }
       saveDelegation(stored)
@@ -320,16 +337,22 @@ export default function CreateStream() {
     setSigned(null)
     setBeneficiaryName('')
     setRecipient('')
-    setVestTotal('')
-    setVestN('4')
-    setVestUnit('year')
-    setRateInput('')
-    setRateUnit('month')
-    setBoundMode('unbounded')
-    setBudgetAmount('')
-    setEndDate('')
-    setInitialAmount('0')
+    setRateAmount('')
+    setRateSeconds(MONTH)
+    setUpfront('0')
+    setBoundMode('revocation')
+    setCapDurationN('')
+    setCapDurationUnit('month')
+    setActiveTotal(null)
     setError(null)
+    setTouchedBene(false)
+    setTouchedRate(false)
+    setTouchedCap(false)
+    setRateHint(false)
+    setUseCustomToken(false)
+    setCustomToken('')
+    setTokenMeta(null)
+    setTokenStatus('idle')
   }
 
   if (signed) {
@@ -352,7 +375,7 @@ export default function CreateStream() {
 
           <div className="mt-5 rounded-xl bg-raised ring-1 ring-line divide-y divide-line">
             <Row label="Beneficiary"><Payee logo={((signed.meta.recipient ?? signed.delegation.delegate).slice(2, 4)).toUpperCase()} tint="#22D3EE" name={signed.meta.label} addr={short(signed.meta.recipient ?? signed.delegation.delegate)} size={32} /></Row>
-            <Row label="Pay rate"><span className="font-mono font-semibold text-ink">{signed.meta.ratePerPeriod} USDC / {signed.meta.ratePeriod}</span></Row>
+            <Row label="Pay rate"><span className="font-mono font-semibold text-ink">{signed.meta.ratePerPeriod} USDC / month</span></Row>
             <Row label="Total"><span className="font-mono text-ink">{unbounded ? 'Unlimited' : `${trimAmount(formatUnits(BigInt(signed.meta.maxAmount ?? '0'), decimals))} USDC`}</span></Row>
             <Row label="Contract hash"><Mono className="text-xs text-dim">{short(signed.meta.agreement!.termsHash)}</Mono></Row>
           </div>
@@ -372,247 +395,230 @@ export default function CreateStream() {
   }
 
   return (
-    <div className="rise grid grid-cols-1 lg:grid-cols-[1fr_minmax(300px,360px)] gap-6 items-start">
+    <div className="rise grid grid-cols-1 lg:grid-cols-[1fr_minmax(300px,360px)] gap-6 items-stretch">
       {/* Form */}
-      <div>
-        <h1 className="text-2xl font-extrabold tracking-tight text-ink">New stream</h1>
-        <p className="text-dim text-sm mt-1">
-          {isVesting
-            ? 'Pay an exact total over a set duration. The rate is derived; the total is enforced on-chain.'
-            : 'Pay continuously at a rate. The balance accrues every second and can be claimed anytime.'}
-        </p>
-
+      <div className="space-y-5">
         {error && (
-          <div className="mt-4 rounded-xl px-3 py-2 text-sm text-danger" style={{ background: 'rgba(251,113,133,.10)', boxShadow: 'inset 0 0 0 1px rgba(251,113,133,.30)' }}>
+          <div className="rounded-xl px-3 py-2 text-sm text-danger" style={{ background: 'rgba(251,113,133,.10)', boxShadow: 'inset 0 0 0 1px rgba(251,113,133,.30)' }}>
             {error}
           </div>
         )}
 
-        <Card className="p-5 mt-5 space-y-5">
-          <div className="flex items-center gap-2">
-            {([['vesting', 'By total'], ['custom', 'By rate']] as [SetupMode, string][]).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setSetupMode(key)}
-                className={`flex-1 h-11 rounded-xl text-sm font-medium transition ${setupMode === key ? 'bg-raised text-ink ring-1 ring-line2' : 'text-dim hover:text-ink'}`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          <Field label="Beneficiary name" hint="Shown in your streams list. Optional.">
+        {/* Block 1 — Beneficiary */}
+        <Block title="Beneficiary">
+          <Field label="Name">
             <input type="text" placeholder="Jane Doe" value={beneficiaryName} onChange={(e) => setBeneficiaryName(e.target.value)} />
           </Field>
-
-          <Field label="Beneficiary address" hint="Who can claim, and where funds are paid.">
-            <input type="text" placeholder="0x…" value={recipient} onChange={(e) => setRecipient(e.target.value)} />
+          <Field label="Address" required missing={errs.beneficiary}>
+            <input type="text" placeholder="0x…" list="beneficiary-suggestions" value={recipient} onChange={(e) => setRecipient(e.target.value)} onBlur={() => setTouchedBene(true)} className={errs.beneficiary ? 'ring-1 ring-danger' : ''} />
+            <datalist id="beneficiary-suggestions">
+              {beneficiarySuggestions.map((s) => <option key={s.value} value={s.value} label={s.label} />)}
+            </datalist>
             {recipient && !recipientValid && <p className="text-xs text-danger mt-1">Invalid address</p>}
           </Field>
+        </Block>
 
-          {isVesting ? (
-            <>
-              <Field label="Total amount" hint="The exact amount paid out over the whole period. Enforced on-chain.">
-                <div className="relative">
-                  <input type="number" placeholder="100000" value={vestTotal} onChange={(e) => setVestTotal(e.target.value)} min={0} step="any" className="pr-16" />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">{tokenSymbol}</span>
+        {/* Block 2 — Payment details */}
+        <Block
+          title="Payment details"
+          action={
+            <Segmented
+              value={useCustomToken}
+              onChange={setUseCustomToken}
+              options={[{ key: false, label: <USDC size={15} /> }, { key: true, label: 'Custom ERC-20' }]}
+            />
+          }
+        >
+          {useCustomToken && (
+            <div>
+              <input type="text" placeholder="Token 0x…" value={customToken} onChange={(e) => setCustomToken(e.target.value)} />
+              {tokenStatus === 'loading' && <p className="text-xs text-faint mt-1">Resolving token…</p>}
+              {tokenStatus === 'ok' && tokenMeta && (
+                <p className="text-xs text-faint mt-1"><span className="text-ink font-semibold">{tokenMeta.symbol}</span> · {tokenMeta.name} · {tokenMeta.decimals} decimals</p>
+              )}
+              {tokenStatus === 'error' && customToken && <p className="text-xs text-danger mt-1">Not a readable ERC-20 on {chainName(safe.chainId)} — make sure the token is deployed on this chain.</p>}
+            </div>
+          )}
+          {!useCustomToken && (
+            <p className="text-xs text-faint"><span className="text-ink font-semibold">USDC</span> · USD Coin · 6 decimals</p>
+          )}
+
+          <Field label="Pay rate" required missing={errs.rate}>
+            <div className="grid grid-cols-3 gap-2">
+              {RATE_SCALES.map((s, i) => (
+                <div key={s.key}>
+                  <div className="text-[11px] text-faint mb-1">{s.label}</div>
+                  <div className="relative">
+                    <input
+                      ref={i === 0 ? rateRef : undefined}
+                      type="text" inputMode="decimal" placeholder="0"
+                      value={rateCellValue(s.seconds)}
+                      onChange={(e) => onRateChange(s.seconds, e.target.value)}
+                      onFocus={(e) => { e.target.select(); setRateHint(false) }}
+                      onBlur={() => setTouchedRate(true)}
+                      className={`pr-12 ${errs.rate ? 'ring-1 ring-danger' : ''}`}
+                    />
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-faint">{tokenSymbol}</span>
+                  </div>
                 </div>
-              </Field>
+              ))}
+            </div>
+            {rateHint && <p className="text-xs text-pending mt-2">Set a pay rate first to fix a limit.</p>}
+          </Field>
 
-              <Field label="Over" hint="The vesting period. The per-second rate is derived from total ÷ duration.">
-                <div className="grid grid-cols-[120px_1fr] gap-3">
-                  <input type="number" placeholder="4" value={vestN} onChange={(e) => setVestN(e.target.value)} min={0} step="any" />
-                  <select value={vestUnit} onChange={(e) => setVestUnit(e.target.value)}>
+          <Field label="Upfront payment">
+            <div className="relative">
+              <input type="text" inputMode="decimal" placeholder="0" value={upfront} onChange={(e) => setUpfront(dec(e.target.value))} onFocus={(e) => e.target.select()} className="pr-16" />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">{tokenSymbol}</span>
+            </div>
+          </Field>
+        </Block>
+
+        {/* Block 3 — Security / limit */}
+        <Block
+          title="Security / limit"
+          action={
+            <Segmented
+              value={boundMode}
+              onChange={onLimitChange}
+              options={[{ key: 'revocation', label: 'Revocation only' }, { key: 'hardcap', label: 'Hard cap' }]}
+            />
+          }
+        >
+          {boundMode === 'hardcap' && (
+            <div className={`mt-1 grid grid-cols-[1fr_1.35fr_1fr] rounded-xl ring-1 divide-x divide-line ${errs.cap ? 'ring-danger' : 'ring-line'}`}>
+              <div className="p-3">
+                <div className="text-[11px] text-faint mb-1.5 text-center uppercase tracking-wide">End date</div>
+                <input type="date" lang="en" value={capDurationSeconds > 0 ? toDateInput(now + capDurationSeconds) : ''} onChange={(e) => onEndDateChange(e.target.value)} onBlur={() => setTouchedCap(true)} className="w-full" />
+              </div>
+              <div className="p-3">
+                <div className="text-[11px] text-faint mb-1.5 text-center uppercase tracking-wide">Duration</div>
+                <div className="flex gap-1.5">
+                  <input type="text" inputMode="decimal" placeholder="3" value={capDurationN} onChange={(e) => setCapDurationN(clampDur(dec(e.target.value)))} onBlur={() => setTouchedCap(true)} className="flex-1 min-w-0 w-0" />
+                  <select value={capDurationUnit} onChange={(e) => setCapDurationUnit(e.target.value)} className="flex-1 min-w-0 w-0 px-1 truncate">
                     {DURATION_UNITS.map((u) => <option key={u.key} value={u.key}>{u.label}</option>)}
                   </select>
                 </div>
-                {preview && effectiveRate && (
-                  <p className="text-[11px] text-faint font-mono mt-2">≈ {effectiveRate} {tokenSymbol}/month{preview.endsAt ? ` · fully vested by ${dateStr(preview.endsAt)}` : ''}</p>
-                )}
-              </Field>
-            </>
-          ) : (
-            <>
-              <Field label="Pay rate">
-                <div className="grid grid-cols-[1fr_120px] gap-3">
-                  <div className="relative">
-                    <input type="number" placeholder="1000" value={rateInput} onChange={(e) => setRateInput(e.target.value)} onBlur={() => snapRate(rateUnit)} min={0} step="any" className="pr-16" />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">{tokenSymbol}</span>
-                  </div>
-                  <select value={rateUnit} onChange={(e) => snapRate(e.target.value as RateUnitKey)}>
-                    {RATE_UNITS.map((u) => <option key={u.key} value={u.key}>per {u.label.toLowerCase()}</option>)}
-                  </select>
-                </div>
-                {preview && (
-                  <p className="text-[11px] text-faint font-mono mt-2">
-                    ≈ {preview.perSecond} {tokenSymbol}/s · {trimAmount(preview.perDay)}/day · {trimAmount(preview.perMonth)}/month
-                  </p>
-                )}
-              </Field>
-
-              <Field label="Limit">
-                <div className="flex items-center gap-2">
-                  {BOUND_MODES.map((m) => (
-                    <button
-                      key={m.key}
-                      type="button"
-                      onClick={() => setBoundMode(m.key)}
-                      className={`flex-1 h-11 rounded-xl text-sm font-medium transition ${boundMode === m.key ? 'bg-raised text-ink ring-1 ring-line2' : 'text-dim hover:text-ink'}`}
-                    >
-                      {m.label}
-                    </button>
-                  ))}
-                </div>
-
-                {boundMode === 'budget' && (
-                  <div className="mt-3">
-                    <div className="relative">
-                      <input type="number" placeholder="12000" value={budgetAmount} onChange={(e) => setBudgetAmount(e.target.value)} min={0} step="any" className="pr-16" />
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">{tokenSymbol}</span>
-                    </div>
-                    {budgetBelowInitial && <p className="text-xs text-danger mt-1">Total budget must be ≥ the upfront amount.</p>}
-                    {budgetValid && preview?.lasts && (
-                      <p className="text-[11px] text-pending mt-2">Lasts ~{preview.lasts} at this rate. Renew after that to keep paying.</p>
-                    )}
-                  </div>
-                )}
-
-                {boundMode === 'enddate' && (
-                  <div className="mt-3">
-                    <input type="datetime-local" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-                    {endValid && preview?.totalStr && (
-                      <p className="text-[11px] text-faint mt-2 flex items-center gap-1"><IconCal size={11} /> Total paid by then ≈ {preview.totalStr} {tokenSymbol}.</p>
-                    )}
-                  </div>
-                )}
-              </Field>
-
-              <Field label="Upfront amount" hint="Paid immediately at start. Optional.">
-                <div className="relative">
-                  <input type="number" placeholder="0" value={initialAmount} onChange={(e) => setInitialAmount(e.target.value)} min={0} step="any" className="pr-16" />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">{tokenSymbol}</span>
-                </div>
-              </Field>
-            </>
-          )}
-
-          <Field label="Token">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setUseCustomToken(false)}
-                className={`flex-1 h-11 rounded-xl text-sm font-medium inline-flex items-center justify-center gap-2 transition ${!useCustomToken ? 'bg-raised text-ink ring-1 ring-line2' : 'text-dim hover:text-ink'}`}
-              >
-                <USDC size={15} />
-              </button>
-              <button
-                type="button"
-                onClick={() => setUseCustomToken(true)}
-                className={`flex-1 h-11 rounded-xl text-sm font-medium transition ${useCustomToken ? 'bg-raised text-ink ring-1 ring-line2' : 'text-dim hover:text-ink'}`}
-              >
-                Custom ERC-20
-              </button>
-            </div>
-            {!useCustomToken && defaultUsdc && <p className="text-xs text-faint font-mono mt-2 truncate">{defaultUsdc}</p>}
-            {useCustomToken && (
-              <div className="grid grid-cols-[1fr_88px] gap-2 mt-2">
-                <input type="text" placeholder="Token 0x…" value={customToken} onChange={(e) => setCustomToken(e.target.value)} />
-                <input type="number" placeholder="6" value={customDecimals} onChange={(e) => setCustomDecimals(parseInt(e.target.value) || 6)} min={0} max={24} />
               </div>
+              <div className="p-3">
+                <div className="text-[11px] text-faint mb-1.5 text-center uppercase tracking-wide">Total budget</div>
+                <div className="relative">
+                  <input type="text" inputMode="decimal" placeholder="900" value={capTotalValue} onChange={(e) => onTotalChange(e.target.value)} onBlur={() => { setActiveTotal(null); setTouchedCap(true) }} className="w-full pr-12" />
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-faint">{tokenSymbol}</span>
+                </div>
+              </div>
+            </div>
             )}
-          </Field>
-        </Card>
+        </Block>
       </div>
 
-      {/* Live preview */}
-      <Card className="p-5 lg:sticky lg:top-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-xs font-semibold text-faint uppercase tracking-wide"><IconRepeat size={15} /> Stream preview</div>
-          {!preview && <span className="text-xs text-faint">Incomplete</span>}
+      {/* What the erc20Streaming caveat enforces on-chain — not a mirror of the form */}
+      <Card className="p-5 flex flex-col">
+        <div className="flex items-center gap-2 text-xs font-semibold text-faint uppercase tracking-wide"><IconLock size={15} /> Enforced on-chain</div>
+
+        <div className="mt-4 space-y-3 text-sm">
+          <PreviewRow label="Beneficiary">
+            {recipientValid ? <Mono className="text-xs text-dim">{short(recipient)}</Mono> : <span className={`text-[11px] ${errs.beneficiary ? 'text-danger' : 'text-faint'}`}>{errs.beneficiary ? 'address required' : 'not set'}</span>}
+          </PreviewRow>
+
+          <div className="rounded-xl bg-raised ring-1 ring-line p-3">
+            <div className="text-faint text-xs">Flow</div>
+            {rateValid ? (
+              <div className="font-mono font-bold text-ink tnum mt-0.5" style={{ fontSize: 20 }}>{perSecondStr} <span className="text-dim text-sm font-semibold">{tokenSymbol} / second</span></div>
+            ) : (
+              <div className={`text-sm font-semibold mt-0.5 ${errs.rate ? 'text-danger' : 'text-faint'}`}>{errs.rate ? 'pay rate required' : 'set a pay rate'}</div>
+            )}
+          </div>
+
+          <PreviewRow label="Total cap">
+            {boundMode === 'revocation' ? (
+              <span className="font-mono text-ink">Unlimited</span>
+            ) : capDurationSeconds > 0 ? (
+              <>
+                <span className="font-mono text-ink">{fmt(capMaxRaw)} {tokenSymbol}</span>
+                <span className="text-faint text-[11px] block">reached ~{dateStr(now + capDurationSeconds)}</span>
+              </>
+            ) : (
+              <span className={`text-[11px] ${errs.cap ? 'text-danger' : 'text-faint'}`}>{errs.cap ? 'cap required' : 'unlimited until set'}</span>
+            )}
+          </PreviewRow>
+
+          <PreviewRow label="Upfront"><span className="font-mono text-ink">{trimAmount(upfront || '0')} {tokenSymbol}</span></PreviewRow>
+
+          <PreviewRow label="Token">
+            <span className="text-ink text-xs">{tokenSymbol}{useCustomToken && tokenMeta?.name ? ` · ${tokenMeta.name}` : ''}</span>
+            {tokenValid && <Mono className="text-[10px] text-faint block">{short(tokenAddress as string)}</Mono>}
+          </PreviewRow>
+
+          <div className="pt-3 border-t border-line">
+            <p className="text-[11px] text-faint leading-relaxed">The exact terms the <a href="https://docs.metamask.io/smart-accounts-kit/reference/delegation/caveats#erc20streaming" target="_blank" rel="noreferrer" className="text-[color:var(--accent)] hover:underline">erc20Streaming</a> caveat enforces: flow per second, total cap, beneficiary.</p>
+          </div>
         </div>
 
-        {preview ? (
-          <div className="mt-4 space-y-3 text-sm">
-            <PreviewRow label="Subscriber"><Mono className="text-xs text-dim">{short(safe.safeAddress)}</Mono></PreviewRow>
-            <PreviewRow label="Beneficiary">
-              <span className="text-ink truncate">{beneficiaryName || 'Beneficiary'}</span>
-              {recipientValid && <Mono className="text-[11px] text-faint block">{short(recipient)}</Mono>}
-            </PreviewRow>
-            <div className="rounded-xl bg-raised ring-1 ring-line p-3">
-              <div className="text-faint text-xs">Accrues</div>
-              <div className="font-mono font-bold text-ink tnum mt-0.5" style={{ fontSize: 22 }}>
-                {effectiveRate} <span className="text-dim text-sm font-semibold">{tokenSymbol} / {displayUnit}</span>
+        <div className="mt-auto pt-4 border-t border-line space-y-3">
+          {step === 'idle' ? (
+            <>
+              <div className="flex items-center gap-2 text-xs text-dim">
+                <IconCube size={14} style={{ color: 'var(--accent)' }} /> Pinned to IPFS, hash bound to your signature.
               </div>
-              <div className="text-faint text-[11px] mt-1 font-mono">≈ {preview.perSecond} {tokenSymbol}/s</div>
+              <GaslessButton size="lg" onClick={onSignClick} disabled={signing} className="w-full">Pin &amp; sign</GaslessButton>
+              {!ready && <p className="text-[11px] text-faint text-center">Fill the required fields to sign.</p>}
+            </>
+          ) : (
+            <div className="space-y-2 py-1 text-xs text-dim">
+              <div className="flex items-center gap-2"><IconHash size={12} /> {step === 'building' ? 'Building contract…' : step === 'pinning' ? `Pinning to IPFS${pinnedCid ? ` · ${short(pinnedCid)}` : '…'}` : 'Waiting for Safe signature…'}</div>
             </div>
-            {isVesting ? (
-              <>
-                <PreviewRow label={<span className="flex items-center gap-1"><IconLock size={12} /> Total</span>}>
-                  <span className="font-mono text-ink">{preview.totalStr} {tokenSymbol}</span>
-                  <span className="text-faint text-[11px] block">exact, enforced on-chain</span>
-                </PreviewRow>
-                {preview.endsAt && (
-                  <PreviewRow label="Fully vested by"><span className="text-ink text-xs">{dateStr(preview.endsAt)}</span></PreviewRow>
-                )}
-              </>
-            ) : (
-              <>
-                <PreviewRow label={<span className="flex items-center gap-1"><IconLock size={12} /> After one {displayUnit}</span>}>
-                  <span className="font-mono text-ink">{trimAmount(preview.afterOne)} {tokenSymbol}</span>
-                  <span className="text-faint text-[11px] block">claimable, accumulating</span>
-                </PreviewRow>
-                <PreviewRow label="Total budget">
-                  {preview.unbounded ? (
-                    <>
-                      <span className="font-mono text-ink">Unlimited</span>
-                      <span className="text-faint text-[11px] block">runs until revoked</span>
-                    </>
-                  ) : (
-                    <>
-                      <span className="font-mono text-ink">{preview.totalStr} {tokenSymbol}</span>
-                      {preview.endsAt && <span className="text-faint text-[11px] block">by {dateStr(preview.endsAt)}</span>}
-                    </>
-                  )}
-                </PreviewRow>
-              </>
-            )}
-            <div className="pt-3 border-t border-line">
-              <p className="text-[11px] text-faint leading-relaxed">Unclaimed balance keeps accruing, nothing is forfeited. The <span className="text-dim">erc20Streaming</span> caveat caps every claim on-chain.</p>
-            </div>
-          </div>
-        ) : (
-          <p className="mt-6 text-sm text-dim leading-relaxed">{isVesting ? 'Fill in a total, a duration and a token to preview the stream.' : 'Fill in a pay rate and a token to preview the stream.'}</p>
-        )}
-
-        {preview && (
-          <div className="mt-5 pt-4 border-t border-line space-y-3">
-            {step === 'idle' ? (
-              <>
-                <div className="flex items-center gap-2 text-xs text-dim">
-                  <IconCube size={14} style={{ color: 'var(--accent)' }} /> Pinned to IPFS, hash bound to your signature.
-                </div>
-                <GaslessButton size="lg" onClick={handleSign} disabled={!canSign} className="w-full">
-                  Pin & sign
-                </GaslessButton>
-                <p className="text-[11px] text-faint text-center">1 signature</p>
-              </>
-            ) : (
-              <div className="space-y-2 py-1 text-xs text-dim">
-                <div className="flex items-center gap-2"><IconHash size={12} /> {step === 'building' ? 'Building contract…' : step === 'pinning' ? `Pinning to IPFS${pinnedCid ? ` · ${short(pinnedCid)}` : '…'}` : 'Waiting for Safe signature…'}</div>
-              </div>
-            )}
-          </div>
-        )}
+          )}
+        </div>
       </Card>
     </div>
   )
 }
 
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+function Segmented<T extends string | boolean>({ options, value, onChange }: {
+  options: { key: T; label: React.ReactNode }[]
+  value: T
+  onChange: (v: T) => void
+}) {
+  return (
+    <div className="inline-flex items-center gap-0.5 p-0.5 rounded-full bg-raised ring-1 ring-line">
+      {options.map((o, i) => {
+        const active = o.key === value
+        return (
+          <button
+            key={i}
+            type="button"
+            onClick={() => onChange(o.key)}
+            className={`px-3 h-7 rounded-full text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition ${active ? '' : 'text-dim hover:text-ink'}`}
+            style={active ? { background: 'var(--accent)', color: '#08130d', boxShadow: '0 1px 8px rgba(88,230,184,.3)' } : undefined}
+          >
+            {o.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function Block({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <Card className="p-5 space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-xs font-semibold text-faint uppercase tracking-wide"><span className="text-ink"><IconCal size={14} /></span> {title}</div>
+        {action}
+      </div>
+      {children}
+    </Card>
+  )
+}
+
+function Field({ label, hint, required, missing, children }: { label: string; hint?: string; required?: boolean; missing?: boolean; children: React.ReactNode }) {
   return (
     <div>
-      <label className="text-sm font-medium text-ink block mb-1.5">{label}</label>
+      <label className="text-sm font-medium block mb-1.5">
+        <span className="text-ink">{label}</span>
+        {required && <span className={missing ? 'text-danger ml-1' : 'text-faint ml-1'}>*</span>}
+      </label>
       {children}
       {hint && <p className="text-xs text-faint mt-1">{hint}</p>}
     </div>

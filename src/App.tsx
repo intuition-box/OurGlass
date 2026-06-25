@@ -94,7 +94,7 @@ function AppInner() {
 
   return (
     <div className="min-h-screen">
-      <div className="max-w-[1180px] mx-auto px-5 py-6 grid grid-cols-[220px_1fr] gap-6">
+      <div className="max-w-[1440px] mx-auto px-6 py-6 grid grid-cols-[240px_1fr] gap-8">
         {/* Sidebar */}
         <aside className="flex flex-col gap-5 glass-strong rounded-2xl ring-1 ring-line p-4">
           <Logo size={30} />
