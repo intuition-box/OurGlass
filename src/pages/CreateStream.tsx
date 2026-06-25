@@ -16,7 +16,7 @@ import {
 } from '../lib/streamTerms'
 import { MAX_UINT256, perSecondForTotal } from '../lib/streamRate'
 import { getEnvironment } from '../lib/environment'
-import { saveDelegation, type StoredDelegation } from '../lib/storage'
+import { saveDelegation, getDelegations, type StoredDelegation } from '../lib/storage'
 import { Card, Btn, GaslessButton, USDC, Mono, CopyChip, Payee } from '../ui/components'
 import { IconCube, IconLock, IconCheck, IconExt, IconHash, IconCal } from '../ui/icons'
 
@@ -41,6 +41,7 @@ const DURATION_UNITS = [
 ]
 
 const dateStr = (sec: number) => new Date(sec * 1000).toLocaleDateString()
+const toDateInput = (sec: number) => new Date(sec * 1000).toISOString().slice(0, 10)
 
 type SignStep = 'idle' | 'building' | 'pinning' | 'signing'
 type BoundMode = 'revocation' | 'hardcap'
@@ -129,6 +130,29 @@ export default function CreateStream() {
       /* partial input */
     }
   }
+
+  function onEndDateChange(v: string) {
+    const endSec = Math.floor(new Date(v).getTime() / 1000)
+    const nowSec = Math.floor(Date.now() / 1000)
+    if (Number.isFinite(endSec) && endSec > nowSec) {
+      const u = DURATION_UNITS.find((d) => d.key === capDurationUnit)!
+      setCapDurationN(trimNum((endSec - nowSec) / u.seconds))
+    }
+  }
+
+  // Beneficiary autocomplete: Safe owners first, then recent recipients (local).
+  const beneficiarySuggestions = useMemo(() => {
+    const out: { value: string; label: string }[] = []
+    const seen = new Set<string>()
+    for (const o of safe.owners ?? []) {
+      if (!seen.has(o.toLowerCase())) { seen.add(o.toLowerCase()); out.push({ value: o, label: 'Safe owner' }) }
+    }
+    for (const d of getDelegations()) {
+      const r = d.meta.recipient
+      if (r && !seen.has(r.toLowerCase())) { seen.add(r.toLowerCase()); out.push({ value: r, label: d.meta.label || 'Recent' }) }
+    }
+    return out
+  }, [safe.owners])
 
   // ---- Validation ----
   const rateValid = amountPerSecond > 0n
@@ -333,7 +357,10 @@ export default function CreateStream() {
             <input type="text" placeholder="Jane Doe" value={beneficiaryName} onChange={(e) => setBeneficiaryName(e.target.value)} />
           </Field>
           <Field label="Address" required missing={errs.beneficiary}>
-            <input type="text" placeholder="0x…" value={recipient} onChange={(e) => setRecipient(e.target.value)} onBlur={() => setTouchedBene(true)} className={errs.beneficiary ? 'ring-1 ring-danger' : ''} />
+            <input type="text" placeholder="0x…" list="beneficiary-suggestions" value={recipient} onChange={(e) => setRecipient(e.target.value)} onBlur={() => setTouchedBene(true)} className={errs.beneficiary ? 'ring-1 ring-danger' : ''} />
+            <datalist id="beneficiary-suggestions">
+              {beneficiarySuggestions.map((s) => <option key={s.value} value={s.value} label={s.label} />)}
+            </datalist>
             {recipient && !recipientValid && <p className="text-xs text-danger mt-1">Invalid address</p>}
           </Field>
         </Block>
@@ -396,7 +423,7 @@ export default function CreateStream() {
               <div className="mt-3 grid grid-cols-3 gap-2">
                 <div>
                   <div className="text-[11px] text-faint mb-1">End date</div>
-                  <input type="text" readOnly value={capDurationSeconds > 0 ? dateStr(now + capDurationSeconds) : '—'} className="text-dim" />
+                  <input type="date" value={capDurationSeconds > 0 ? toDateInput(now + capDurationSeconds) : ''} onChange={(e) => onEndDateChange(e.target.value)} onBlur={() => setTouchedCap(true)} className={errs.cap ? 'ring-1 ring-danger' : ''} />
                 </div>
                 <div>
                   <div className="text-[11px] text-faint mb-1">Duration</div>
