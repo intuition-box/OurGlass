@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSafeAppsSDK } from '@safe-global/safe-apps-react-sdk'
-import { createPublicClient, http, isAddress, erc20Abi, parseUnits, formatUnits, type Address, type Hex } from 'viem'
+import { createPublicClient, http, isAddress, parseUnits, formatUnits, type Address, type Hex } from 'viem'
 import { createDelegation } from '@metamask/smart-accounts-kit'
 import { DeleGatorModuleFactoryABI } from '../config/abis'
 import { getAddresses } from '../config/addresses'
-import { findChain, USDC_ADDRESS } from '../config/supported-chains'
+import { findChain, USDC_ADDRESS, chainName } from '../config/supported-chains'
 import { DEFAULT_SALT } from '../lib/module'
 import { buildDelegationTypedData, computeDelegationHash, type DelegationStruct } from '../lib/delegations'
 import { ipfsToHttp, type PinResult } from '../lib/subscriptionTerms'
@@ -15,6 +15,7 @@ import {
   offlinePinStream,
 } from '../lib/streamTerms'
 import { MAX_UINT256, perSecondForTotal } from '../lib/streamRate'
+import { readErc20Meta } from '../lib/erc20'
 import { getEnvironment } from '../lib/environment'
 import { saveDelegation, getDelegations, type StoredDelegation } from '../lib/storage'
 import { Card, Btn, GaslessButton, USDC, Mono, CopyChip, Payee } from '../ui/components'
@@ -28,6 +29,7 @@ const trimNum = (n: number) => (Number.isFinite(n) ? String(Math.round(n * 100) 
 const dec = (v: string) => v.replace(',', '.').replace(/[^\d.]/g, '')
 // Duration is a positive number capped at 999 (per unit).
 const clampDur = (v: string) => { const n = parseFloat(v); return Number.isFinite(n) && n > 999 ? '999' : v }
+
 const MONTH = 2_592_000
 
 // Three display scales for the rate table. Same per-second flow, shown at each
@@ -102,15 +104,10 @@ export default function CreateStream() {
     setTokenStatus('loading')
     ;(async () => {
       try {
-        // decimals is the only field the math needs; name/symbol are best-effort
-        // (some weird tokens like USDT return bytes32 / non-standard types).
-        const d = await client.readContract({ address: customToken as Address, abi: erc20Abi, functionName: 'decimals' })
-        const [symbol, name] = await Promise.all([
-          client.readContract({ address: customToken as Address, abi: erc20Abi, functionName: 'symbol' }).catch(() => ''),
-          client.readContract({ address: customToken as Address, abi: erc20Abi, functionName: 'name' }).catch(() => ''),
-        ])
-        if (!cancelled) { setTokenMeta({ name: name as string, symbol: (symbol as string) || '?', decimals: d }); setTokenStatus('ok') }
-      } catch {
+        const meta = await readErc20Meta(client, customToken as Address)
+        if (!cancelled) { setTokenMeta(meta); setTokenStatus('ok') }
+      } catch (e) {
+        console.error('token resolve failed', e)
         if (!cancelled) { setTokenMeta(null); setTokenStatus('error') }
       }
     })()
@@ -439,7 +436,7 @@ export default function CreateStream() {
               {tokenStatus === 'ok' && tokenMeta && (
                 <p className="text-xs text-faint mt-1"><span className="text-ink font-semibold">{tokenMeta.symbol}</span> · {tokenMeta.name} · {tokenMeta.decimals} decimals</p>
               )}
-              {tokenStatus === 'error' && customToken && <p className="text-xs text-danger mt-1">Not a readable ERC-20 on this chain.</p>}
+              {tokenStatus === 'error' && customToken && <p className="text-xs text-danger mt-1">Not a readable ERC-20 on {chainName(safe.chainId)} — make sure the token is deployed on this chain.</p>}
             </div>
           )}
 
