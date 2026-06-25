@@ -13,13 +13,12 @@ import {
   buildStreamAgreement,
   pinStreamAgreement,
   offlinePinStream,
-  streamedAvailable,
 } from '../lib/streamTerms'
-import { MAX_UINT256, perSecondForTotal, humanDuration } from '../lib/streamRate'
+import { MAX_UINT256, perSecondForTotal } from '../lib/streamRate'
 import { getEnvironment } from '../lib/environment'
 import { saveDelegation, type StoredDelegation } from '../lib/storage'
 import { Card, Btn, GaslessButton, USDC, Mono, CopyChip, Payee } from '../ui/components'
-import { IconCube, IconLock, IconCheck, IconExt, IconHash, IconRepeat, IconCal } from '../ui/icons'
+import { IconCube, IconLock, IconCheck, IconExt, IconHash, IconCal } from '../ui/icons'
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
 const trimAmount = (s: string) => (s.includes('.') ? s.replace(/\.?0+$/, '') : s)
@@ -152,18 +151,7 @@ export default function CreateStream() {
 
   // ---- Preview (always shown; missing required fields render in red) ----
   const now = Math.floor(Date.now() / 1000)
-  const monthlyRate = amountPerSecond > 0n ? fmt(amountPerSecond * BigInt(MONTH)) : ''
   const perSecondStr = amountPerSecond > 0n ? fmt(amountPerSecond) : ''
-  const afterOne = amountPerSecond > 0n
-    ? fmt(streamedAvailable({
-        amountPerSecondRaw: amountPerSecond.toString(),
-        initialAmountRaw: upfrontRaw.toString(),
-        maxAmountRaw: resolveMaxRaw().toString(),
-        startTime: 0,
-        nowSeconds: MONTH,
-      }))
-    : ''
-  const capLasts = capDurationSeconds > 0 ? humanDuration(capDurationSeconds) : ''
 
   async function handleSign() {
     setSigning(true)
@@ -333,11 +321,6 @@ export default function CreateStream() {
     <div className="rise grid grid-cols-1 lg:grid-cols-[1fr_minmax(300px,360px)] gap-6 items-start">
       {/* Form */}
       <div className="space-y-5">
-        <div>
-          <h1 className="text-2xl font-extrabold tracking-tight text-ink">New stream</h1>
-          <p className="text-dim text-sm mt-1">Pay continuously. The balance accrues every second and can be claimed anytime.</p>
-        </div>
-
         {error && (
           <div className="rounded-xl px-3 py-2 text-sm text-danger" style={{ background: 'rgba(251,113,133,.10)', boxShadow: 'inset 0 0 0 1px rgba(251,113,133,.30)' }}>
             {error}
@@ -346,10 +329,10 @@ export default function CreateStream() {
 
         {/* Block 1 — Beneficiary */}
         <Block title="Beneficiary">
-          <Field label="Name" hint="Shown in your streams list. Optional.">
+          <Field label="Name">
             <input type="text" placeholder="Jane Doe" value={beneficiaryName} onChange={(e) => setBeneficiaryName(e.target.value)} />
           </Field>
-          <Field label="Address" required missing={errs.beneficiary} hint="Who can claim, and where funds are paid.">
+          <Field label="Address" required missing={errs.beneficiary}>
             <input type="text" placeholder="0x…" value={recipient} onChange={(e) => setRecipient(e.target.value)} onBlur={() => setTouchedBene(true)} className={errs.beneficiary ? 'ring-1 ring-danger' : ''} />
             {recipient && !recipientValid && <p className="text-xs text-danger mt-1">Invalid address</p>}
           </Field>
@@ -372,7 +355,7 @@ export default function CreateStream() {
             )}
           </Field>
 
-          <Field label="Pay rate" required missing={errs.rate} hint="The same flow shown at three scales. Edit any one — the others follow.">
+          <Field label="Pay rate" required missing={errs.rate}>
             <div className="grid grid-cols-3 gap-2">
               {RATE_SCALES.map((s) => (
                 <div key={s.key}>
@@ -390,10 +373,9 @@ export default function CreateStream() {
                 </div>
               ))}
             </div>
-            {perSecondStr && <p className="text-[11px] text-faint font-mono mt-2">≈ {perSecondStr} {tokenSymbol}/s</p>}
           </Field>
 
-          <Field label="Upfront payment" hint="Paid immediately at stream start. Optional.">
+          <Field label="Upfront payment">
             <div className="relative">
               <input type="number" placeholder="0" value={upfront} onChange={(e) => setUpfront(e.target.value)} min={0} step="any" className="pr-16" />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">{tokenSymbol}</span>
@@ -403,7 +385,7 @@ export default function CreateStream() {
 
         {/* Block 3 — Security / limit */}
         <Block title="Security / limit">
-          <Field label="Limit" hint="By default the stream runs until you revoke it. Add a hard cap to bound the total.">
+          <Field label="Limit">
             <Segmented
               value={boundMode}
               onChange={setBoundMode}
@@ -432,55 +414,52 @@ export default function CreateStream() {
                     <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-faint">{tokenSymbol}</span>
                   </div>
                 </div>
-                {capLasts && <p className="text-[11px] text-faint col-span-3">Fully vested in ~{capLasts}, by {dateStr(now + capDurationSeconds)}.</p>}
               </div>
             )}
           </Field>
         </Block>
       </div>
 
-      {/* Stream preview — always full; missing required fields show in red */}
+      {/* What the erc20Streaming caveat enforces on-chain — not a mirror of the form */}
       <Card className="p-5 lg:sticky lg:top-4">
-        <div className="flex items-center gap-2 text-xs font-semibold text-faint uppercase tracking-wide"><IconRepeat size={15} /> Stream preview</div>
+        <div className="flex items-center gap-2 text-xs font-semibold text-faint uppercase tracking-wide"><IconLock size={15} /> Enforced on-chain</div>
 
         <div className="mt-4 space-y-3 text-sm">
-          <PreviewRow label="Payer"><Mono className="text-xs text-dim">{short(safe.safeAddress)}</Mono></PreviewRow>
           <PreviewRow label="Beneficiary">
-            <span className="text-ink truncate">{beneficiaryName || 'Beneficiary'}</span>
-            {recipientValid ? <Mono className="text-[11px] text-faint block">{short(recipient)}</Mono> : <span className={`text-[11px] block ${errs.beneficiary ? 'text-danger' : 'text-faint'}`}>{errs.beneficiary ? 'address required' : 'not set'}</span>}
+            {recipientValid ? <Mono className="text-xs text-dim">{short(recipient)}</Mono> : <span className={`text-[11px] ${errs.beneficiary ? 'text-danger' : 'text-faint'}`}>{errs.beneficiary ? 'address required' : 'not set'}</span>}
           </PreviewRow>
+
           <div className="rounded-xl bg-raised ring-1 ring-line p-3">
-            <div className="text-faint text-xs">Accrues</div>
+            <div className="text-faint text-xs">Flow</div>
             {rateValid ? (
-              <>
-                <div className="font-mono font-bold text-ink tnum mt-0.5" style={{ fontSize: 22 }}>{monthlyRate} <span className="text-dim text-sm font-semibold">{tokenSymbol} / month</span></div>
-                <div className="text-faint text-[11px] mt-1 font-mono">≈ {perSecondStr} {tokenSymbol}/s</div>
-              </>
+              <div className="font-mono font-bold text-ink tnum mt-0.5" style={{ fontSize: 20 }}>{perSecondStr} <span className="text-dim text-sm font-semibold">{tokenSymbol} / second</span></div>
             ) : (
               <div className={`text-sm font-semibold mt-0.5 ${errs.rate ? 'text-danger' : 'text-faint'}`}>{errs.rate ? 'pay rate required' : 'set a pay rate'}</div>
             )}
           </div>
-          <PreviewRow label="Upfront"><span className="font-mono text-ink">{trimAmount(upfront || '0')} {tokenSymbol}</span></PreviewRow>
-          <PreviewRow label={<span className="flex items-center gap-1"><IconLock size={12} /> Limit</span>}>
+
+          <PreviewRow label="Total cap">
             {boundMode === 'revocation' ? (
-              <>
-                <span className="font-mono text-ink">Unlimited</span>
-                <span className="text-faint text-[11px] block">runs until revoked</span>
-              </>
+              <span className="font-mono text-ink">Unlimited</span>
             ) : capDurationSeconds > 0 ? (
               <>
                 <span className="font-mono text-ink">{fmt(capMaxRaw)} {tokenSymbol}</span>
-                <span className="text-faint text-[11px] block">by {dateStr(now + capDurationSeconds)}</span>
+                <span className="text-faint text-[11px] block">reached ~{dateStr(now + capDurationSeconds)}</span>
               </>
             ) : (
-              <span className={`text-[11px] ${errs.cap ? 'text-danger' : 'text-faint'}`}>{errs.cap ? 'cap duration required' : 'set a duration'}</span>
+              <span className={`text-[11px] ${errs.cap ? 'text-danger' : 'text-faint'}`}>{errs.cap ? 'cap required' : 'unlimited until set'}</span>
             )}
           </PreviewRow>
-          {rateValid && (
-            <PreviewRow label="After one month"><span className="font-mono text-ink">{afterOne} {tokenSymbol}</span></PreviewRow>
-          )}
+
+          <PreviewRow label="Upfront"><span className="font-mono text-ink">{trimAmount(upfront || '0')} {tokenSymbol}</span></PreviewRow>
+
+          <PreviewRow label="Token">
+            <span className="text-ink text-xs">{tokenSymbol}</span>
+            {tokenValid && <Mono className="text-[10px] text-faint block">{short(tokenAddress as string)}</Mono>}
+          </PreviewRow>
+
           <div className="pt-3 border-t border-line">
-            <p className="text-[11px] text-faint leading-relaxed">Unclaimed balance keeps accruing, nothing is forfeited. The <span className="text-dim">erc20Streaming</span> caveat caps every claim on-chain.</p>
+            <p className="text-[11px] text-faint leading-relaxed">The exact terms the <span className="text-dim">erc20Streaming</span> caveat enforces: flow per second, total cap, beneficiary.</p>
           </div>
         </div>
 
