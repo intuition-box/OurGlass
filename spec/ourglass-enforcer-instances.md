@@ -38,7 +38,7 @@ manager with the security model unchanged.
 
 | Contract | Address | Verified |
 |---|---|---|
-| `DeleGatorModuleFactory` | `0xbDDe43bcF6db9DBeB1127e6574ccF70bFb1c2dc3` | wired to canonical DelegationManager |
+| `DeleGatorModuleFactory` | `0xbDDE43bCf6Db9DBeB1127E6574CCF70BFb1c2DC3` | wired to canonical DelegationManager |
 | `ERC20PeriodTransferEnforcer` (marker) | `0x11262E3116a50654547AB0A417BE77eB14b9F339` | bytecode IDENTICAL to audited artifact |
 | `TimestampEnforcer` | `0xF1635460548F44543366ec4453D512a7Ce85Af85` | bytecode IDENTICAL to audited artifact |
 | `ERC20StreamingEnforcer` | `0xE475D14d61756D6e940B74C20d2E44EB70c71a8D` | bytecode IDENTICAL to audited artifact |
