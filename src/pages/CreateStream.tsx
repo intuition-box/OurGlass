@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useSafeAppsSDK } from '@safe-global/safe-apps-react-sdk'
 import { createPublicClient, http, isAddress, parseUnits, formatUnits, type Address, type Hex } from 'viem'
-import { baseSepolia, base, sepolia } from 'viem/chains'
 import { createDelegation } from '@metamask/smart-accounts-kit'
 import { DeleGatorModuleFactoryABI } from '../config/abis'
 import { getAddresses } from '../config/addresses'
@@ -29,11 +28,10 @@ import {
   type RateUnitKey,
 } from '../lib/streamRate'
 import { getEnvironment } from '../lib/environment'
+import { findChain } from '../config/supported-chains'
 import { saveDelegation, type StoredDelegation } from '../lib/storage'
 import { Card, Btn, GaslessButton, USDC, Mono, CopyChip, Payee } from '../ui/components'
 import { IconCube, IconLock, IconCheck, IconExt, IconHash, IconRepeat, IconCal } from '../ui/icons'
-
-const chains: Record<number, typeof baseSepolia | typeof base | typeof sepolia> = { 84532: baseSepolia, 11155111: sepolia, 8453: base }
 
 const USDC_BY_CHAIN: Record<number, Address> = {
   84532: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
@@ -210,7 +208,7 @@ export default function CreateStream() {
     setError(null)
     try {
       const delegate = recipient as Address
-      const chain = chains[safe.chainId]
+      const chain = findChain(safe.chainId)
       if (!chain) throw new Error(`Unsupported chain: ${safe.chainId}`)
       const client = createPublicClient({ chain, transport: http() })
       const addrs = getAddresses(safe.chainId)

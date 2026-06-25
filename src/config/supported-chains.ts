@@ -19,7 +19,28 @@ export const anvilLocal: Chain = {
   rpcUrls: { default: { http: ['http://127.0.0.1:8545'] } },
 }
 
-export const SUPPORTED_CHAINS: readonly Chain[] = [mainnet, base, baseSepolia, sepolia, anvilLocal]
+// Reliable, CORS-enabled RPC endpoints per chain. viem's built-in defaults
+// (e.g. eth.merkle.io for mainnet) are Cloudflare rate-limited and fail with
+// "Failed to fetch" from inside the Safe App iframe — pin explicit endpoints.
+const RPC_URLS: Record<number, string> = {
+  [mainnet.id]: 'https://ethereum-rpc.publicnode.com',
+  [base.id]: 'https://base-rpc.publicnode.com',
+  [baseSepolia.id]: 'https://base-sepolia-rpc.publicnode.com',
+  [sepolia.id]: 'https://ethereum-sepolia-rpc.publicnode.com',
+}
+
+/** The pinned RPC URL for a chain, or undefined to use viem's default. */
+export function rpcUrl(chainId: number): string | undefined {
+  return RPC_URLS[chainId]
+}
+
+function withRpc(chain: Chain): Chain {
+  const url = RPC_URLS[chain.id]
+  if (!url) return chain
+  return { ...chain, rpcUrls: { ...chain.rpcUrls, default: { http: [url] } } }
+}
+
+export const SUPPORTED_CHAINS: readonly Chain[] = [mainnet, base, baseSepolia, sepolia, anvilLocal].map(withRpc)
 
 /** The viem Chain for an id, or undefined if unsupported (callers null-check). */
 export function findChain(chainId: number): Chain | undefined {
