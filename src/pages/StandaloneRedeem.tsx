@@ -1,20 +1,13 @@
 import { useMemo, useRef, useState } from 'react'
 import { createPublicClient, http, isAddress, erc20Abi, type Address, type PublicClient, type WalletClient } from 'viem'
-import { baseSepolia, base, sepolia } from 'viem/chains'
 import { useAccount, useConnect, useDisconnect, useWalletClient } from 'wagmi'
 import { importDelegationsJson, type StoredDelegation } from '../lib/storage'
 import { ipfsToHttp } from '../lib/subscriptionTerms'
 import { redeemSubscriptionDirect } from '../lib/redeemDirect'
+import { SELECTABLE_CHAINS, findChain, chainName, explorerTx } from '../config/supported-chains'
 import { Logo, Card, Btn, StatusBadge, Payee, Mono } from '../ui/components'
 import { IconCheck, IconExt, IconAlert, IconLock, IconDoc, IconCube, IconArrowL } from '../ui/icons'
 
-const CHAINS: { id: number; label: string; chain: typeof baseSepolia | typeof base | typeof sepolia }[] = [
-  { id: 84532, label: 'Base Sepolia', chain: baseSepolia },
-  { id: 11155111, label: 'Ethereum Sepolia', chain: sepolia },
-  { id: 8453, label: 'Base', chain: base },
-]
-const explorerTx = (id: number, h: string) =>
-  id === 84532 ? `https://sepolia.basescan.org/tx/${h}` : id === 11155111 ? `https://sepolia.etherscan.io/tx/${h}` : `https://basescan.org/tx/${h}`
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
 const tintFor = (addr: string) => {
   const palette = ['#3B82F6', '#22D3EE', '#8B5CF6', '#34D399', '#FB7185', '#FBBF24']
@@ -40,7 +33,8 @@ export default function StandaloneRedeem() {
   const { data: walletClient } = useWalletClient()
   const injectedConnector = connectors.find((c) => c.id === 'injected') ?? connectors.find((c) => c.type === 'injected')
 
-  const chain = useMemo(() => CHAINS.find((c) => c.id === chainId)!.chain, [chainId])
+  // chainId always comes from the selector (a SELECTABLE_CHAINS id), so it resolves.
+  const chain = useMemo(() => findChain(chainId)!, [chainId])
 
   function parse(text: string) {
     setError(null)
@@ -51,7 +45,7 @@ export default function StandaloneRedeem() {
       setSub(parsed)
       setAmount(parsed.meta.amount ?? '')
       setRecipient(parsed.meta.recipient ?? '')
-      if (parsed.meta.chainId && CHAINS.some((c) => c.id === parsed.meta.chainId)) setChainId(parsed.meta.chainId)
+      if (parsed.meta.chainId && SELECTABLE_CHAINS.some((c) => c.id === parsed.meta.chainId)) setChainId(parsed.meta.chainId)
     } catch (err) {
       setSub(null)
       setError(err instanceof Error ? err.message : 'Invalid delegation JSON')
@@ -78,7 +72,7 @@ export default function StandaloneRedeem() {
     if (!walletClient) return setError('Connect your wallet first.')
     if (address?.toLowerCase() !== sub.delegation.delegate.toLowerCase())
       return setError('Connected wallet must be the payee (delegate) of this subscription.')
-    if (walletChainId !== chainId) return setError(`Switch your wallet to ${CHAINS.find((c) => c.id === chainId)!.label}.`)
+    if (walletChainId !== chainId) return setError(`Switch your wallet to ${chainName(chainId)}.`)
     if (!isAddress(recipient)) return setError('Enter a valid recipient address.')
     if (!amount || parseFloat(amount) <= 0) return setError('Enter an amount to charge.')
     setCharging(true)
@@ -123,7 +117,7 @@ export default function StandaloneRedeem() {
           <div className="flex items-center gap-2">
             <span className="text-xs text-faint">Biller console</span>
             <select value={chainId} onChange={(e) => setChainId(Number(e.target.value))} className="h-9 text-sm" style={{ width: 'auto' }}>
-              {CHAINS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+              {SELECTABLE_CHAINS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
             </select>
             {isConnected && address ? (
               <button
@@ -228,7 +222,7 @@ export default function StandaloneRedeem() {
               {isDelegate && wrongChain && (
                 <div className="mt-4 rounded-xl px-3 py-3 text-xs leading-relaxed" style={{ background: 'rgba(251,191,36,.08)', boxShadow: 'inset 0 0 0 1px rgba(251,191,36,.25)', color: '#FBBF24' }}>
                   <div className="flex items-center gap-1.5 font-semibold mb-1"><IconAlert size={13} /> Wrong network</div>
-                  Switch your wallet to {CHAINS.find((c) => c.id === chainId)!.label} to redeem.
+                  Switch your wallet to {chainName(chainId)} to redeem.
                 </div>
               )}
               {error && (

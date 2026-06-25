@@ -1,16 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSafeAppsSDK } from '@safe-global/safe-apps-react-sdk'
 import { createPublicClient, http, isAddress, erc20Abi, formatUnits, BaseError, type Address } from 'viem'
-import { baseSepolia, base, sepolia } from 'viem/chains'
 import { getDelegations, type StoredDelegation } from '../lib/storage'
 import { streamedAvailable } from '../lib/streamTerms'
 import { buildRedeemTx } from '../lib/redeemDirect'
 import { Card, Btn, StatusBadge, Payee, Mono, USDC } from '../ui/components'
 import { IconBolt, IconCheck, IconLock, IconArrowL, IconRepeat } from '../ui/icons'
+import { findChain } from '../config/supported-chains'
 
 const isStream = (d: StoredDelegation) => d.meta.scopeType === 'erc20Streaming'
 
-const chains: Record<number, typeof baseSepolia | typeof base | typeof sepolia> = { 84532: baseSepolia, 11155111: sepolia, 8453: base }
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
 const tintFor = (addr: string) => {
   const palette = ['#3B82F6', '#22D3EE', '#8B5CF6', '#34D399', '#FB7185', '#FBBF24']
@@ -59,7 +58,7 @@ export default function Charge() {
     if (!m.tokenAddress || !m.amountPerSecond || !m.maxAmount || m.startTime == null) return
     let cancelled = false
     ;(async () => {
-      const chain = chains[safe.chainId]
+      const chain = findChain(safe.chainId)
       if (!chain) return
       const client = createPublicClient({ chain, transport: http() })
       let decimals = 6
@@ -95,7 +94,7 @@ export default function Charge() {
     setCharging(true)
     setError(null)
     try {
-      const chain = chains[safe.chainId]
+      const chain = findChain(safe.chainId)
       if (!chain) throw new Error(`Unsupported chain: ${safe.chainId}`)
       const client = createPublicClient({ chain, transport: http() })
       const tokenAddress = selected.meta.tokenAddress

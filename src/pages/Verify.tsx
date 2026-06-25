@@ -1,4 +1,5 @@
 import { getAddresses } from '../config/addresses'
+import { SELECTABLE_CHAINS } from '../config/supported-chains'
 import { Logo, Card, CopyChip } from '../ui/components'
 import { IconShield, IconCheck, IconX, IconExt, IconCube, IconDoc } from '../ui/icons'
 
@@ -6,11 +7,7 @@ import { IconShield, IconCheck, IconX, IconExt, IconCube, IconDoc } from '../ui/
 // calls — it only renders the canonical (audited) addresses the app uses, so it
 // can be hosted anywhere (incl. IPFS) and read even if the main app is down.
 
-const CHAINS = [
-  { id: 84532, name: 'Base Sepolia', explorer: 'https://sepolia.basescan.org' },
-  { id: 11155111, name: 'Ethereum Sepolia', explorer: 'https://sepolia.etherscan.io' },
-  { id: 8453, name: 'Base', explorer: 'https://basescan.org' },
-] as const
+const CHAINS = SELECTABLE_CHAINS
 
 const FRAMEWORK_REPO = 'https://github.com/MetaMask/delegation-framework'
 const DEPLOYMENTS_DOC = 'https://github.com/MetaMask/delegation-framework/blob/main/documents/Deployments.md'
@@ -104,7 +101,7 @@ export default function Verify() {
             const a = getAddresses(c.id)
             return (
               <Card key={c.id} className="p-5">
-                <div className="text-sm font-semibold text-ink mb-1">{c.name}</div>
+                <div className="text-sm font-semibold text-ink mb-1">{c.label}</div>
                 <AddressRow label="DelegationManager" addr={a.delegationManager} shared explorer={c.explorer} />
                 <AddressRow label="ERC20PeriodTransferEnforcer" addr={a.erc20PeriodTransferEnforcer} shared explorer={c.explorer} />
                 <AddressRow label="DeleGatorModuleFactory" addr={a.delegatorModuleFactory} explorer={c.explorer} />

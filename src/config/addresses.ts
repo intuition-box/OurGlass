@@ -64,6 +64,16 @@ export const addresses: Record<number, ChainAddresses> = {
     delegatorModuleFactory: '0x0D0421e43057bf850e243EcDA2AD8966C8D5877B' as Address,
     ...SHARED_ENFORCERS,
   },
+  // Ethereum Mainnet (1) — DelegationManager + enforcers are the deterministic
+  // MetaMask deployments (same addresses). The DeleGatorModuleFactory is NOT
+  // deterministic: deploy it with `DEPLOYER_PRIVATE_KEY=0x… node scripts/deploy-factory.mjs`
+  // against a mainnet RPC, then paste the printed address below. Until then the
+  // zero address makes module setup fail gracefully ("Configuration needed").
+  1: {
+    delegationManager: DELEGATION_MANAGER,
+    delegatorModuleFactory: '0x0000000000000000000000000000000000000000' as Address, // TODO: deploy on mainnet, paste here
+    ...SHARED_ENFORCERS,
+  },
   // Localhost / Anvil (forked Base Sepolia, uses same chain ID)
   // When running locally, the factory address comes from test/deployment.json
   31337: {

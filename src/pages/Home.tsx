@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useSafeAppsSDK } from '@safe-global/safe-apps-react-sdk'
 import { createPublicClient, http, type Address } from 'viem'
-import { baseSepolia, base, sepolia } from 'viem/chains'
 import { DeleGatorModuleFactoryABI, SafeABI } from '../config/abis'
 import { getAddresses } from '../config/addresses'
 import { buildModuleInstallTxs, DEFAULT_SALT } from '../lib/module'
@@ -10,12 +9,7 @@ import { periodToSeconds, isPeriodType } from '../lib/enforcers'
 import { SubscriptionDetail } from './SubscriptionDetail'
 import { Card, Btn, StatusBadge, Payee, type Status } from '../ui/components'
 import { IconChip, IconCheck, IconPlus, IconRepeat, IconLock, IconCube, IconExt, IconAlert, IconArrowR } from '../ui/icons'
-
-const chains: Record<number, typeof baseSepolia | typeof base | typeof sepolia> = {
-  84532: baseSepolia,
-  11155111: sepolia,
-  8453: base,
-}
+import { findChain } from '../config/supported-chains'
 
 type Page = 'home' | 'create' | 'import' | 'redeem'
 
@@ -101,7 +95,7 @@ export default function Home({ onNavigate }: { onNavigate: (page: Page) => void 
   async function checkModuleStatus() {
     try {
       setModuleStatus('loading')
-      const chain = chains[safe.chainId]
+      const chain = findChain(safe.chainId)
       if (!chain) {
         setError(`Unsupported chain: ${safe.chainId}`)
         setModuleStatus('error')
