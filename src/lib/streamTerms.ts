@@ -117,7 +117,9 @@ export function streamedAvailable(params: {
   nowSeconds: number
 }): bigint {
   const { amountPerSecondRaw, initialAmountRaw, maxAmountRaw, startTime, nowSeconds } = params
-  if (nowSeconds <= startTime) return BigInt(initialAmountRaw)
+  // Before startTime the enforcer unlocks nothing — not even the upfront (matches
+  // ERC20StreamingEnforcer: `block.timestamp < startTime` returns 0).
+  if (nowSeconds < startTime) return 0n
   const elapsed = BigInt(nowSeconds - startTime)
   const accrued = BigInt(initialAmountRaw) + BigInt(amountPerSecondRaw) * elapsed
   const max = BigInt(maxAmountRaw)
