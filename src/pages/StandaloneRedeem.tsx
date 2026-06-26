@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { createPublicClient, http, isAddress, erc20Abi, formatUnits, type Address, type PublicClient, type WalletClient } from 'viem'
 import { useAccount, useConnect, useDisconnect, useWalletClient } from 'wagmi'
 import { importDelegationsJson, type StoredDelegation } from '../lib/storage'
@@ -6,6 +6,7 @@ import { ipfsToHttp } from '../lib/subscriptionTerms'
 import { redeemSubscriptionDirect } from '../lib/redeemDirect'
 import { useClaimState } from '../hooks/useClaimState'
 import { ClaimProgress } from '../ui/ClaimProgress'
+import { AnimatedAmount } from '../ui/AnimatedAmount'
 import { SELECTABLE_CHAINS, findChain, chainName, explorerTx, rpcUrl } from '../config/supported-chains'
 import { Logo, Card, Btn, StatusBadge, Payee, Mono } from '../ui/components'
 import { IconCheck, IconExt, IconAlert, IconLock, IconRepeat, IconDoc, IconCube, IconArrowL } from '../ui/icons'
@@ -25,12 +26,14 @@ export default function StandaloneRedeem() {
   const [jsonInput, setJsonInput] = useState('')
   const [sub, setSub] = useState<StoredDelegation | null>(null)
   const [recipient, setRecipient] = useState('')
-  const [amount, setAmount] = useState('')
   const [charging, setCharging] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [txHash, setTxHash] = useState<string | null>(null)
-  const [amountEdited, setAmountEdited] = useState(false)
+  const [chargedAmount, setChargedAmount] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
+  // The live claim amount (raw wei), updated each animation frame so the redeem
+  // bills exactly what the ticking counter shows.
+  const liveAmountRef = useRef(0n)
 
   // Claimed / claimable / cap for the loaded delegation, read from the caveat
   // enforcer (stream lifetime cap, or subscription per-period cap).
@@ -52,10 +55,6 @@ export default function StandaloneRedeem() {
       const parsed = importDelegationsJson(text)[0]
       if (!parsed) throw new Error('No subscription found in JSON')
       setSub(parsed)
-      // Streams have no fixed per-period amount; the effect below fills the claim
-      // amount with the claimable balance once the on-chain state resolves.
-      setAmount(isStream(parsed) ? '' : parsed.meta.amount ?? '')
-      setAmountEdited(false)
       setRecipient(parsed.meta.recipient ?? '')
       if (parsed.meta.chainId && SELECTABLE_CHAINS.some((c) => c.id === parsed.meta.chainId)) setChainId(parsed.meta.chainId)
     } catch (err) {
@@ -79,12 +78,6 @@ export default function StandaloneRedeem() {
   const wrongChain = isConnected && walletChainId !== chainId
   const canRedeem = isDelegate && !wrongChain && !!walletClient && !charging
 
-  // Pre-fill the claim amount with the claimable balance, until the user edits it.
-  useEffect(() => {
-    if (!sub || claim.loading || claim.error || amountEdited) return
-    setAmount(formatUnits(claim.claimable, claim.decimals))
-  }, [sub, claim.claimable, claim.decimals, claim.loading, claim.error, amountEdited])
-
   async function handleRedeem() {
     if (!sub) return
     if (!walletClient) return setError('Connect your wallet first.')
@@ -92,7 +85,8 @@ export default function StandaloneRedeem() {
       return setError('Connected wallet must be the payee (delegate) of this subscription.')
     if (walletChainId !== chainId) return setError(`Switch your wallet to ${chainName(chainId)}.`)
     if (!isAddress(recipient)) return setError('Enter a valid recipient address.')
-    if (!amount || parseFloat(amount) <= 0) return setError('Enter an amount to charge.')
+    const amountStr = formatUnits(liveAmountRef.current, claim.decimals)
+    if (parseFloat(amountStr) <= 0) return setError('Nothing to claim yet.')
     setCharging(true)
     setError(null)
     try {
@@ -114,9 +108,10 @@ export default function StandaloneRedeem() {
         chainId,
         delegation: sub.delegation,
         token: { address: tokenAddress, decimals },
-        amount,
+        amount: amountStr,
         recipient: recipient as Address,
       })
+      setChargedAmount(amountStr)
       setTxHash(hash)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Redeem failed')
@@ -163,7 +158,7 @@ export default function StandaloneRedeem() {
                 <IconCheck size={24} />
               </div>
               <h2 className="text-lg font-bold text-ink mt-4">Charged</h2>
-              <p className="text-sm text-dim mt-1">{amount} USDC redeemed on-chain — capped by the signed period limit.</p>
+              <p className="text-sm text-dim mt-1">{chargedAmount} USDC redeemed on-chain — capped by the signed caveat.</p>
               <div className="mt-5 rounded-xl glass-soft ring-1 ring-line p-4 text-left">
                 <div className="flex items-center justify-between"><span className="text-xs text-faint">Recipient</span><Mono className="text-xs text-dim">{short(recipient)}</Mono></div>
                 <div className="flex items-center justify-between mt-2"><span className="text-xs text-faint">Transaction</span><Mono className="text-xs text-dim">{short(txHash)}</Mono></div>
@@ -174,7 +169,7 @@ export default function StandaloneRedeem() {
                     View on explorer <IconExt size={13} className="opacity-60" />
                   </a>
                 )}
-                <Btn kind="ghost" onClick={() => { setTxHash(null); setSub(null); setJsonInput(''); setRecipient('') }}>Charge another</Btn>
+                <Btn kind="ghost" onClick={() => { setTxHash(null); setSub(null); setJsonInput(''); setRecipient(''); setChargedAmount(''); liveAmountRef.current = 0n }}>Charge another</Btn>
               </div>
             </Card>
           </div>
@@ -263,12 +258,26 @@ export default function StandaloneRedeem() {
                   {recipient && !isAddress(recipient) && <p className="text-xs text-danger mt-1">Invalid address</p>}
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-ink block mb-1.5">{isStream(sub) ? 'Claim amount' : 'Amount'}</label>
-                  <div className="relative">
-                    <input type="number" value={amount} onChange={(e) => { setAmount(e.target.value); setAmountEdited(true) }} min={0} step="any" className="pr-16" />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">USDC</span>
+                  <label className="text-sm font-medium text-ink block mb-1.5">Claim amount</label>
+                  <div className="flex items-baseline gap-2">
+                    {claim.loading ? (
+                      <span className="font-mono font-bold text-faint tnum" style={{ fontSize: 30 }}>—</span>
+                    ) : (
+                      <span style={{ fontSize: 30 }} className="leading-none">
+                        <AnimatedAmount
+                          base={claim.claimable}
+                          ratePerSecondRaw={isStream(sub) ? BigInt(sub.meta.amountPerSecond ?? '0') : 0n}
+                          decimals={claim.decimals}
+                          max={claim.cap !== null ? (claim.cap > claim.claimed ? claim.cap - claim.claimed : 0n) : null}
+                          onValue={(raw) => { liveAmountRef.current = raw }}
+                        />
+                      </span>
+                    )}
+                    <span className="text-sm text-faint">USDC</span>
                   </div>
-                  <p className="text-xs text-faint mt-1">Pre-filled with the claimable balance above. Capped on-chain by the caveat; you pay gas in ETH.</p>
+                  <p className="text-xs text-faint mt-1">
+                    {isStream(sub) ? 'Accrues live by the second. Claims the full amount shown — capped on-chain by the caveat; you pay gas in ETH.' : 'The claimable amount this period. Capped on-chain by the caveat; you pay gas in ETH.'}
+                  </p>
                 </div>
               </div>
 
