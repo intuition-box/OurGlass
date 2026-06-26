@@ -4,6 +4,8 @@ import { useAccount, useConnect, useDisconnect, useWalletClient } from 'wagmi'
 import { importDelegationsJson, type StoredDelegation } from '../lib/storage'
 import { ipfsToHttp } from '../lib/subscriptionTerms'
 import { redeemSubscriptionDirect } from '../lib/redeemDirect'
+import { streamedAvailable } from '../lib/streamTerms'
+import { MAX_UINT256 } from '../lib/streamRate'
 import { useClaimState } from '../hooks/useClaimState'
 import { ClaimProgress } from '../ui/ClaimProgress'
 import { AnimatedAmount } from '../ui/AnimatedAmount'
@@ -85,14 +87,34 @@ export default function StandaloneRedeem() {
       return setError('Connected wallet must be the payee (delegate) of this subscription.')
     if (walletChainId !== chainId) return setError(`Switch your wallet to ${chainName(chainId)}.`)
     if (!isAddress(recipient)) return setError('Enter a valid recipient address.')
-    const amountStr = formatUnits(liveAmountRef.current, claim.decimals)
-    if (parseFloat(amountStr) <= 0) return setError('Nothing to claim yet.')
+    if (liveAmountRef.current <= 0n) return setError('Nothing to claim yet.')
     setCharging(true)
     setError(null)
     try {
       // Base/baseSepolia carry an OP-stack tx formatter whose client type isn't the
       // generic PublicClient the SDK helper expects.
       const publicClient = createPublicClient({ chain, transport: http(rpcUrl(chainId)) }) as unknown as PublicClient
+
+      // The live counter extrapolates with Date.now(), which runs ahead of the chain's
+      // block.timestamp — claiming it overshoots the enforcer's allowance and reverts
+      // with allowance-exceeded. Clamp to what the enforcer unlocks at the latest block
+      // (always <= the mining block's timestamp, so the redeem stays within allowance).
+      let amountRaw = liveAmountRef.current
+      if (isStream(sub)) {
+        const block = await publicClient.getBlock()
+        const unlocked = streamedAvailable({
+          amountPerSecondRaw: sub.meta.amountPerSecond ?? '0',
+          initialAmountRaw: sub.meta.initialAmount ?? '0',
+          maxAmountRaw: sub.meta.maxAmount ?? MAX_UINT256.toString(),
+          startTime: sub.meta.startTime ?? 0,
+          nowSeconds: Number(block.timestamp),
+        })
+        const safe = unlocked > claim.claimed ? unlocked - claim.claimed : 0n
+        if (amountRaw > safe) amountRaw = safe
+      }
+      if (amountRaw <= 0n) throw new Error('Nothing to claim yet — try again in a moment.')
+      const amountStr = formatUnits(amountRaw, claim.decimals)
+
       const tokenAddress = sub.meta.tokenAddress
       if (!tokenAddress) throw new Error('Subscription has no token address')
       let decimals = 6
