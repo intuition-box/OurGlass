@@ -1,12 +1,16 @@
-import { useMemo, useRef, useState } from 'react'
-import { createPublicClient, http, isAddress, erc20Abi, type Address, type PublicClient, type WalletClient } from 'viem'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPublicClient, http, isAddress, erc20Abi, formatUnits, type Address, type PublicClient, type WalletClient } from 'viem'
 import { useAccount, useConnect, useDisconnect, useWalletClient } from 'wagmi'
 import { importDelegationsJson, type StoredDelegation } from '../lib/storage'
 import { ipfsToHttp } from '../lib/subscriptionTerms'
 import { redeemSubscriptionDirect } from '../lib/redeemDirect'
+import { useClaimState } from '../hooks/useClaimState'
+import { ClaimProgress } from '../ui/ClaimProgress'
 import { SELECTABLE_CHAINS, findChain, chainName, explorerTx, rpcUrl } from '../config/supported-chains'
 import { Logo, Card, Btn, StatusBadge, Payee, Mono } from '../ui/components'
-import { IconCheck, IconExt, IconAlert, IconLock, IconDoc, IconCube, IconArrowL } from '../ui/icons'
+import { IconCheck, IconExt, IconAlert, IconLock, IconRepeat, IconDoc, IconCube, IconArrowL } from '../ui/icons'
+
+const isStream = (d: StoredDelegation) => d.meta.scopeType === 'erc20Streaming'
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
 const tintFor = (addr: string) => {
@@ -25,7 +29,12 @@ export default function StandaloneRedeem() {
   const [charging, setCharging] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [txHash, setTxHash] = useState<string | null>(null)
+  const [amountEdited, setAmountEdited] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  // Claimed / claimable / cap for the loaded delegation, read from the caveat
+  // enforcer (stream lifetime cap, or subscription per-period cap).
+  const claim = useClaimState(sub)
 
   const { address, isConnected, chainId: walletChainId } = useAccount()
   const { connect, connectors } = useConnect()
@@ -43,7 +52,10 @@ export default function StandaloneRedeem() {
       const parsed = importDelegationsJson(text)[0]
       if (!parsed) throw new Error('No subscription found in JSON')
       setSub(parsed)
-      setAmount(parsed.meta.amount ?? '')
+      // Streams have no fixed per-period amount; the effect below fills the claim
+      // amount with the claimable balance once the on-chain state resolves.
+      setAmount(isStream(parsed) ? '' : parsed.meta.amount ?? '')
+      setAmountEdited(false)
       setRecipient(parsed.meta.recipient ?? '')
       if (parsed.meta.chainId && SELECTABLE_CHAINS.some((c) => c.id === parsed.meta.chainId)) setChainId(parsed.meta.chainId)
     } catch (err) {
@@ -66,6 +78,12 @@ export default function StandaloneRedeem() {
   const isDelegate = isConnected && !!sub && address?.toLowerCase() === sub.delegation.delegate.toLowerCase()
   const wrongChain = isConnected && walletChainId !== chainId
   const canRedeem = isDelegate && !wrongChain && !!walletClient && !charging
+
+  // Pre-fill the claim amount with the claimable balance, until the user edits it.
+  useEffect(() => {
+    if (!sub || claim.loading || claim.error || amountEdited) return
+    setAmount(formatUnits(claim.claimable, claim.decimals))
+  }, [sub, claim.claimable, claim.decimals, claim.loading, claim.error, amountEdited])
 
   async function handleRedeem() {
     if (!sub) return
@@ -198,10 +216,19 @@ export default function StandaloneRedeem() {
                 <StatusBadge status={sub.meta.status === 'revoked' ? 'revoked' : 'active'} size="sm" />
               </div>
 
-              <div className="mt-5 rounded-xl glass-soft ring-1 ring-line p-4 flex items-center justify-between">
-                <span className="text-xs text-faint flex items-center gap-1.5"><IconLock size={13} /> Period cap</span>
-                <span className="font-mono font-bold text-ink">{sub.meta.amount} <span className="text-dim text-sm font-semibold">USDC / {sub.meta.period}</span></span>
-              </div>
+              {isStream(sub) ? (
+                <div className="mt-5 rounded-xl glass-soft ring-1 ring-line p-4 flex items-center justify-between">
+                  <span className="text-xs text-faint flex items-center gap-1.5"><IconRepeat size={13} /> Accrues</span>
+                  <span className="font-mono font-bold text-ink">{sub.meta.ratePerPeriod} <span className="text-dim text-sm font-semibold">USDC / {sub.meta.ratePeriod}</span></span>
+                </div>
+              ) : (
+                <div className="mt-5 rounded-xl glass-soft ring-1 ring-line p-4 flex items-center justify-between">
+                  <span className="text-xs text-faint flex items-center gap-1.5"><IconLock size={13} /> Period cap</span>
+                  <span className="font-mono font-bold text-ink">{sub.meta.amount} <span className="text-dim text-sm font-semibold">USDC / {sub.meta.period}</span></span>
+                </div>
+              )}
+
+              <ClaimProgress view={claim} symbol="USDC" />
 
               {httpUri && (
                 <a href={httpUri} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-xs font-mono text-[color:var(--accent)] hover:underline"><IconCube size={12} /> {sub.meta.agreement!.cid.slice(0, 18)}… <IconExt size={10} className="opacity-60" /></a>
@@ -236,18 +263,18 @@ export default function StandaloneRedeem() {
                   {recipient && !isAddress(recipient) && <p className="text-xs text-danger mt-1">Invalid address</p>}
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-ink block mb-1.5">Amount</label>
+                  <label className="text-sm font-medium text-ink block mb-1.5">{isStream(sub) ? 'Claim amount' : 'Amount'}</label>
                   <div className="relative">
-                    <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} min={0} step="any" className="pr-16" />
+                    <input type="number" value={amount} onChange={(e) => { setAmount(e.target.value); setAmountEdited(true) }} min={0} step="any" className="pr-16" />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">USDC</span>
                   </div>
-                  <p className="text-xs text-faint mt-1">Defaults to the period cap. Capped on-chain by the caveat; you pay gas in ETH.</p>
+                  <p className="text-xs text-faint mt-1">Pre-filled with the claimable balance above. Capped on-chain by the caveat; you pay gas in ETH.</p>
                 </div>
               </div>
 
               <div className="mt-6 flex justify-center">
                 <Btn onClick={handleRedeem} disabled={!canRedeem}>
-                  {charging ? 'Redeeming…' : 'Charge on-chain'}
+                  {charging ? 'Redeeming…' : isStream(sub) ? 'Claim on-chain' : 'Charge on-chain'}
                 </Btn>
               </div>
             </Card>
