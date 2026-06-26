@@ -2,11 +2,13 @@ import { useEffect, useMemo, useState } from 'react'
 import { useSafeAppsSDK } from '@safe-global/safe-apps-react-sdk'
 import { createPublicClient, http, isAddress, erc20Abi, formatUnits, BaseError, type Address } from 'viem'
 import { getDelegations, type StoredDelegation } from '../lib/storage'
-import { streamedAvailable } from '../lib/streamTerms'
 import { buildRedeemTx } from '../lib/redeemDirect'
+import { useClaimState } from '../hooks/useClaimState'
+import { useClaimTotals, type ClaimTotals } from '../hooks/useClaimTotals'
+import { ClaimProgress } from '../ui/ClaimProgress'
 import { Card, Btn, StatusBadge, Payee, Mono, USDC } from '../ui/components'
 import { IconBolt, IconCheck, IconLock, IconArrowL, IconRepeat } from '../ui/icons'
-import { findChain } from '../config/supported-chains'
+import { findChain, rpcUrl } from '../config/supported-chains'
 
 const isStream = (d: StoredDelegation) => d.meta.scopeType === 'erc20Streaming'
 
@@ -18,6 +20,46 @@ const tintFor = (addr: string) => {
   return palette[h % palette.length]
 }
 
+// Sum a token-grouped figure across all groups into a display number. Amounts are
+// only meaningfully summed within a token, but the redeem console is USDC-centric
+// so a single headline figure is the useful aggregate.
+function sumDisplay(totals: ClaimTotals, field: 'claimable' | 'claimed'): number {
+  return totals.groups.reduce((sum, g) => sum + Number(formatUnits(g[field], g.decimals)), 0)
+}
+
+const fmtNum = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+function StatsRow({ totals }: { totals: ClaimTotals }) {
+  const active = totals.streams + totals.subscriptions
+  return (
+    <div className="grid grid-cols-3 gap-3 mb-5">
+      <Card className="p-4">
+        <div className="flex items-center gap-2 text-[11px] text-faint uppercase tracking-wide">
+          <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: '#22D3EE' }} /> Claimable now
+        </div>
+        <div className="mt-2 font-mono font-bold text-ink tnum" style={{ fontSize: 22 }}>
+          {totals.loading ? '—' : fmtNum(sumDisplay(totals, 'claimable'))} <span className="text-dim text-xs font-semibold">USDC</span>
+        </div>
+      </Card>
+      <Card className="p-4">
+        <div className="flex items-center gap-2 text-[11px] text-faint uppercase tracking-wide">
+          <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: 'var(--accent)' }} /> Claimed to date
+        </div>
+        <div className="mt-2 font-mono font-bold text-ink tnum" style={{ fontSize: 22 }}>
+          {totals.loading ? '—' : fmtNum(sumDisplay(totals, 'claimed'))} <span className="text-dim text-xs font-semibold">USDC</span>
+        </div>
+      </Card>
+      <Card className="p-4">
+        <div className="flex items-center gap-2 text-[11px] text-faint uppercase tracking-wide">
+          <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: '#6b7280' }} /> Active
+        </div>
+        <div className="mt-2 font-mono font-bold text-ink tnum" style={{ fontSize: 22 }}>{totals.loading ? '—' : active}</div>
+        <div className="text-[11px] text-faint mt-1">{totals.streams} stream{totals.streams === 1 ? '' : 's'} · {totals.subscriptions} sub{totals.subscriptions === 1 ? '' : 's'}</div>
+      </Card>
+    </div>
+  )
+}
+
 export default function Charge() {
   const { sdk, safe } = useSafeAppsSDK()
   const [selected, setSelected] = useState<StoredDelegation | null>(null)
@@ -26,6 +68,11 @@ export default function Charge() {
   const [charging, setCharging] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [safeTxHash, setSafeTxHash] = useState<string | null>(null)
+  const [amountEdited, setAmountEdited] = useState(false)
+
+  // Claimed / claimable / cap for the selected delegation, read from the caveat
+  // enforcer (stream lifetime cap, or subscription per-period cap).
+  const claim = useClaimState(selected)
 
   // This Safe can only redeem delegations where it is the delegate (payee) —
   // both per-period subscriptions and accumulating streams.
@@ -40,46 +87,27 @@ export default function Charge() {
     [safe.safeAddress],
   )
 
+  // Aggregate stats over the chargeable delegations (list view only — skip the
+  // on-chain reads while a single delegation is open).
+  const totals = useClaimTotals(selected ? [] : subs)
+
   function pick(d: StoredDelegation) {
     setSelected(d)
-    // Subscriptions default to the period cap; streams default to the estimated
-    // accrued balance (filled by the effect below once decimals are known).
+    // Seed with the period cap for subscriptions; the effect below overrides with
+    // the claimable balance once the on-chain state resolves.
     setAmount(isStream(d) ? '' : d.meta.amount ?? '')
+    setAmountEdited(false)
     setRecipient(d.meta.recipient ?? '')
     setError(null)
     setSafeTxHash(null)
   }
 
-  // Estimate the claimable streamed balance for the selected stream. The estimate
-  // is UX only — the erc20Streaming caveat caps the actual claim on-chain.
+  // Pre-fill the claim amount with the claimable balance, until the user edits it.
+  // The caveat caps the actual claim on-chain regardless.
   useEffect(() => {
-    if (!selected || !isStream(selected)) return
-    const m = selected.meta
-    if (!m.tokenAddress || !m.amountPerSecond || !m.maxAmount || m.startTime == null) return
-    let cancelled = false
-    ;(async () => {
-      const chain = findChain(safe.chainId)
-      if (!chain) return
-      const client = createPublicClient({ chain, transport: http() })
-      let decimals = 6
-      try {
-        decimals = await client.readContract({ address: m.tokenAddress as Address, abi: erc20Abi, functionName: 'decimals' })
-      } catch {
-        // default to USDC decimals
-      }
-      const available = streamedAvailable({
-        amountPerSecondRaw: m.amountPerSecond!,
-        initialAmountRaw: m.initialAmount ?? '0',
-        maxAmountRaw: m.maxAmount!,
-        startTime: m.startTime!,
-        nowSeconds: Math.floor(Date.now() / 1000),
-      })
-      if (!cancelled) setAmount(formatUnits(available, decimals))
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [selected, safe.chainId])
+    if (!selected || claim.loading || claim.error || amountEdited) return
+    setAmount(formatUnits(claim.claimable, claim.decimals))
+  }, [selected, claim.claimable, claim.decimals, claim.loading, claim.error, amountEdited])
 
   async function handleCharge() {
     if (!selected) return
@@ -96,7 +124,7 @@ export default function Charge() {
     try {
       const chain = findChain(safe.chainId)
       if (!chain) throw new Error(`Unsupported chain: ${safe.chainId}`)
-      const client = createPublicClient({ chain, transport: http() })
+      const client = createPublicClient({ chain, transport: http(rpcUrl(safe.chainId)) })
       const tokenAddress = selected.meta.tokenAddress
       if (!tokenAddress) throw new Error('Subscription has no token address')
       let decimals = 6
@@ -179,6 +207,8 @@ export default function Charge() {
             </div>
           )}
 
+          <ClaimProgress view={claim} symbol={selected.meta.tokenAddress ? 'USDC' : ''} />
+
           {error && (
             <div className="mt-4 rounded-xl px-3 py-2 text-sm text-danger" style={{ background: 'rgba(251,113,133,.10)', boxShadow: 'inset 0 0 0 1px rgba(251,113,133,.30)' }}>{error}</div>
           )}
@@ -192,13 +222,11 @@ export default function Charge() {
             <div>
               <label className="text-sm font-medium text-ink block mb-1.5">{isStream(selected) ? 'Claim amount' : 'Amount'}</label>
               <div className="relative">
-                <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} min={0} step="any" className="pr-16" />
+                <input type="number" value={amount} onChange={(e) => { setAmount(e.target.value); setAmountEdited(true) }} min={0} step="any" className="pr-16" />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">{selected.meta.tokenAddress ? 'USDC' : ''}</span>
               </div>
               <p className="text-xs text-faint mt-1">
-                {isStream(selected)
-                  ? 'Estimated accrued balance. The exact claimable amount is enforced on-chain by the stream caveat; the Safe pays gas in ETH.'
-                  : 'Defaults to the period cap. Capped on-chain by the caveat; the Safe pays gas in ETH.'}
+                Pre-filled with the claimable balance above. The exact amount is capped on-chain by the caveat; the Safe pays gas in ETH.
               </p>
             </div>
           </div>
@@ -230,7 +258,9 @@ export default function Charge() {
           <p className="text-sm text-dim mt-1 max-w-sm mx-auto">Subscriptions where this Safe ({short(safe.safeAddress)}) is the payee appear here, ready to charge every period.</p>
         </Card>
       ) : (
-        <div className="space-y-3 mt-5">
+        <div className="mt-5">
+          <StatsRow totals={totals} />
+          <div className="space-y-3">
           {subs.map((d) => {
             const payeeAddr = d.meta.recipient ?? d.delegation.delegate
             return (
@@ -250,6 +280,7 @@ export default function Charge() {
               </Card>
             )
           })}
+          </div>
         </div>
       )}
     </div>

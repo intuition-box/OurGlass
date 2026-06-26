@@ -74,6 +74,14 @@ describe('registry ⇄ contract addresses are in sync', () => {
     for (const c of SUPPORTED_CHAINS) {
       const a = getAddresses(c.id)
       for (const [field, value] of Object.entries(a)) {
+        // `ourglass` is a nested group of addresses (the OurGlass-owned enforcer
+        // instances), not a flat address — validate its members instead.
+        if (typeof value === 'object' && value !== null) {
+          for (const [sub, addr] of Object.entries(value)) {
+            expect(isAddress(addr), `${c.id}.${field}.${sub} is not a valid address`).toBe(true)
+          }
+          continue
+        }
         expect(isAddress(value), `${c.id}.${field} is not a valid address`).toBe(true)
       }
     }

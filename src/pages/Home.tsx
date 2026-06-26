@@ -9,7 +9,7 @@ import { periodToSeconds, isPeriodType } from '../lib/enforcers'
 import { SubscriptionDetail } from './SubscriptionDetail'
 import { Card, Btn, StatusBadge, Payee, type Status } from '../ui/components'
 import { IconChip, IconCheck, IconPlus, IconRepeat, IconLock, IconCube, IconExt, IconAlert, IconArrowR } from '../ui/icons'
-import { findChain } from '../config/supported-chains'
+import { findChain, rpcUrl } from '../config/supported-chains'
 
 type Page = 'home' | 'create' | 'import' | 'redeem'
 
@@ -101,7 +101,7 @@ export default function Home({ onNavigate }: { onNavigate: (page: Page) => void 
         setModuleStatus('error')
         return
       }
-      const client = createPublicClient({ chain, transport: http() })
+      const client = createPublicClient({ chain, transport: http(rpcUrl(safe.chainId)) })
       const addrs = getAddresses(safe.chainId)
       const predicted = (await client.readContract({
         address: addrs.delegatorModuleFactory,
