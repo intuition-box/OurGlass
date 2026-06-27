@@ -7,6 +7,9 @@ import { anvilLocal, rpcUrl } from './config/supported-chains'
 // so the biller connects MetaMask via the injected connector — no safe() connector.
 export const wagmiConfig = createConfig({
   chains: [mainnet, baseSepolia, sepolia, base, anvilLocal],
+  // The config mounts at the home layout (so the navbar connect button works), which
+  // is prerendered under static export — ssr:true keeps that render storage-safe.
+  ssr: true,
   connectors: [injected()],
   transports: {
     [mainnet.id]: http(rpcUrl(mainnet.id)),

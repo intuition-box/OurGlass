@@ -22,10 +22,13 @@ the Vite app. To do so:
 
 1. Add the wallet stack to `website/package.json` (`wagmi`, `viem`,
    `@tanstack/react-query`, `@metamask/smart-accounts-kit`, `@number-flow/react`).
-2. Keep it 100% client-side under static export: the route page is a server
-   component that renders a `'use client'` mount which `dynamic(..., { ssr: false })`
-   imports the wagmi/viem providers + page, so no browser/wallet code runs during
-   prerender.
+2. Integrate it into the Fumadocs chrome: the page lives in the `(home)` route
+   group (so it inherits the `HomeLayout` navbar + footer + theme), and the wallet
+   `WagmiProvider`/`QueryClientProvider` mount once at the `(home)` layout. The
+   connect button is a custom navbar link; the per-page chain selector moved into
+   the page body. The config uses `ssr: true` so the layout prerenders safely under
+   static export, and the connect button gates on a `mounted` flag to avoid
+   hydration mismatch — no `dynamic(ssr:false)` needed.
 3. Port the dependency tree into a self-contained `website/src/redeem/` subtree
    (`config/`, `lib/`, `hooks/`, `ui/`), trimming each ported module to only the
    exports the console consumes.

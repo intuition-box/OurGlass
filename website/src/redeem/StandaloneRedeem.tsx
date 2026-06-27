@@ -1,6 +1,8 @@
+'use client'
+
 import { useMemo, useRef, useState } from 'react'
 import { createPublicClient, http, isAddress, erc20Abi, formatUnits, type Address, type PublicClient, type WalletClient } from 'viem'
-import { useAccount, useConnect, useDisconnect, useWalletClient } from 'wagmi'
+import { useAccount, useWalletClient } from 'wagmi'
 import { importDelegationsJson, type StoredDelegation } from './lib/storage'
 import { ipfsToHttp } from './lib/subscriptionTerms'
 import { redeemSubscriptionDirect } from './lib/redeemDirect'
@@ -10,7 +12,7 @@ import { useClaimState } from './hooks/useClaimState'
 import { ClaimProgress } from './ui/ClaimProgress'
 import { AnimatedAmount } from './ui/AnimatedAmount'
 import { SELECTABLE_CHAINS, findChain, chainName, explorerTx, rpcUrl } from './config/supported-chains'
-import { Logo, Card, Btn, StatusBadge, Payee, Mono } from './ui/components'
+import { Card, Btn, StatusBadge, Payee, Mono } from './ui/components'
 import { IconCheck, IconExt, IconAlert, IconLock, IconRepeat, IconDoc, IconCube, IconArrowL } from './ui/icons'
 
 const isStream = (d: StoredDelegation) => d.meta.scopeType === 'erc20Streaming'
@@ -42,10 +44,7 @@ export function StandaloneRedeem() {
   const claim = useClaimState(sub)
 
   const { address, isConnected, chainId: walletChainId } = useAccount()
-  const { connect, connectors } = useConnect()
-  const { disconnect } = useDisconnect()
   const { data: walletClient } = useWalletClient()
-  const injectedConnector = connectors.find((c) => c.id === 'injected') ?? connectors.find((c) => c.type === 'injected')
 
   // chainId always comes from the selector (a SELECTABLE_CHAINS id), so it resolves.
   const chain = useMemo(() => findChain(chainId)!, [chainId])
@@ -145,34 +144,16 @@ export function StandaloneRedeem() {
   const httpUri = sub?.meta.agreement && !sub.meta.agreement.uri.startsWith('ipfs://local-') ? ipfsToHttp(sub.meta.agreement.uri) : undefined
 
   return (
-    <div className="og-redeem min-h-screen">
-      <header className="sticky top-0 z-10 glass-strong">
-        <div className="max-w-3xl mx-auto h-14 px-5 flex items-center justify-between border-b border-line">
-          <Logo size={30} />
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-faint">Biller console</span>
-            <select aria-label="Network" value={chainId} onChange={(e) => setChainId(Number(e.target.value))} className="h-9 text-sm" style={{ width: 'auto' }}>
+    <div className="og-redeem">
+      <main className="max-w-3xl mx-auto px-5 py-10 rise">
+        {!txHash && (
+          <div className="mb-6 flex items-center justify-end gap-2">
+            <label htmlFor="redeem-network" className="text-xs text-faint">Network</label>
+            <select id="redeem-network" value={chainId} onChange={(e) => setChainId(Number(e.target.value))} className="h-9 text-sm" style={{ width: 'auto' }}>
               {SELECTABLE_CHAINS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
             </select>
-            {isConnected && address ? (
-              <button
-                onClick={() => disconnect()}
-                title="Disconnect"
-                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-xl glass-soft ring-1 ring-line2 text-xs font-mono text-dim hover:text-ink transition"
-              >
-                <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#34D399' }} />
-                {short(address)}
-              </button>
-            ) : (
-              <Btn kind="secondary" onClick={() => injectedConnector && connect({ connector: injectedConnector })} disabled={!injectedConnector}>
-                Connect wallet
-              </Btn>
-            )}
           </div>
-        </div>
-      </header>
-
-      <main className="max-w-3xl mx-auto px-5 py-8 rise">
+        )}
         {txHash && sub ? (
           <div className="max-w-xl mx-auto">
             <Card className="p-6 text-center">
