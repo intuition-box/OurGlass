@@ -5,7 +5,6 @@ import { WagmiProvider } from 'wagmi'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { wagmiConfig } from './config/chains'
 import App from './App'
-import StandaloneRedeem from './pages/StandaloneRedeem'
 import Verify from './pages/Verify'
 import { Logo } from './ui/components'
 import './index.css'
@@ -16,15 +15,15 @@ const queryClient = new QueryClient()
 const Pitch = React.lazy(() => import('./pages/Pitch'))
 
 // The Safe App is served under /safe-app on the shared domain; utility pages keep
-// their own routes beneath it. Everything else is the in-Safe app shell.
-const isStandalone = window.location.pathname === '/safe-app/redeem'
+// their own routes beneath it. The redeem console now lives on the website at
+// /redeem. Everything else is the in-Safe app shell.
 const isPitch = window.location.pathname === '/safe-app/pitch'
 const isVerify = window.location.pathname === '/safe-app/verify'
 // The Safe App only works inside the Safe iframe. A top-level visitor who reaches
 // the app shell (not a utility route, not framed by Safe) belongs on the website
 // landing, which now lives at the domain root.
 const inSafeIframe = window.self !== window.top
-const isUtilityRoute = isStandalone || isPitch || isVerify
+const isUtilityRoute = isPitch || isVerify
 
 if (!isUtilityRoute && !inSafeIframe) {
   window.location.replace('/')
@@ -37,12 +36,6 @@ if (!isUtilityRoute && !inSafeIframe) {
       </React.Suspense>
     ) : isVerify ? (
       <Verify />
-    ) : isStandalone ? (
-      <WagmiProvider config={wagmiConfig}>
-        <QueryClientProvider client={queryClient}>
-          <StandaloneRedeem />
-        </QueryClientProvider>
-      </WagmiProvider>
     ) : (
       <WagmiProvider config={wagmiConfig}>
         <QueryClientProvider client={queryClient}>

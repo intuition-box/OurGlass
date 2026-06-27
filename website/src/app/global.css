@@ -32,16 +32,28 @@
   --accent-line: rgba(88, 230, 184, 0.3);
   --stream: #3aa3ff;
   --color-base: #0a0a0b;
+  /* Surface + line tokens consumed by the ported redeem console (src/redeem). */
+  --color-surface: #101012;
+  --color-panel: #161618;
+  --color-raised: #1c1c1f;
+  --color-line: #2e2e33;
 }
 
 @theme {
   --color-accent: #58e6b8;
   --color-stream: #3aa3ff;
   --color-base: #0a0a0b;
+  --color-surface: #101012;
+  --color-panel: #161618;
+  --color-raised: #1c1c1f;
+  --color-line: #2e2e33;
+  --color-line2: #3a3a40;
   --color-ink: #fafafa;
   --color-dim: #9a9aa0;
   --color-faint: #6b6b72;
+  --color-danger: #fb7185;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --shadow-card: 0 1px 0 0 rgba(255, 255, 255, 0.02) inset;
 }
 
 body {
@@ -76,4 +88,86 @@ body {
   .hero-video {
     display: none;
   }
+}
+
+/* ── Redeem console (src/redeem) ─────────────────────────────────────────────
+   Design-system primitives ported from the Safe App's index.css. Surfaces are
+   flat, separated by hairline borders (the ring-1 ring-line in the markup), not
+   by blur. The `glass*` names are kept so the ported components flip unchanged. */
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+.glass {
+  background: var(--color-panel);
+}
+.glass-soft {
+  background: var(--color-raised);
+}
+.glass-strong {
+  background: var(--color-surface);
+}
+
+.glow-hover {
+  transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+}
+.glow-hover:hover {
+  box-shadow: 0 0 0 1px var(--accent-line);
+}
+.text-glow {
+  text-shadow: none;
+}
+
+/* Name matches the literal `animation: 'spark …'` in the ported StatusBadge. */
+@keyframes spark {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@keyframes og-rise {
+  from {
+    transform: translateY(8px);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+.rise {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .rise {
+    animation: og-rise 0.4s cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+}
+
+/* Form fields, scoped to the redeem console so Fumadocs inputs are untouched. */
+.og-redeem input,
+.og-redeem textarea,
+.og-redeem select {
+  background: var(--color-panel);
+  border: 1px solid var(--color-line);
+  color: var(--color-ink);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  width: 100%;
+  box-sizing: border-box;
+}
+.og-redeem input:focus,
+.og-redeem textarea:focus,
+.og-redeem select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.og-redeem input::placeholder,
+.og-redeem textarea::placeholder {
+  color: var(--color-faint);
 }
