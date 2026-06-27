@@ -5,6 +5,7 @@ import { readStreamState } from './streamState'
 import { readPeriodState } from './periodState'
 import { streamedAvailable } from './streamTerms'
 import { MAX_UINT256 } from './streamRate'
+import { computeDelegationHash } from './delegations'
 import { type StoredDelegation } from './storage'
 
 export type ClaimScope = 'stream' | 'subscription'
@@ -41,14 +42,18 @@ export async function readClaimFor(client: PublicClient, delegation: StoredDeleg
   const decimals = await readErc20Decimals(client, m.tokenAddress).catch(() => 6)
   const delegationManager = getAddresses(m.chainId).delegationManager
   const caveats = delegation.delegation.caveats
+  // Recompute the hash from the delegation struct — the enforcer keys its state on
+  // this exact value, and older stored `meta.delegationHash` may be the previous
+  // (incorrect) approximation.
+  const delegationHash = computeDelegationHash(delegation.delegation)
 
   if (scope === 'subscription') {
-    const period = await readPeriodState(client, caveats, delegationManager, m.delegationHash)
+    const period = await readPeriodState(client, caveats, delegationManager, delegationHash)
     if (!period) throw new Error('Could not locate the period-transfer caveat')
     return { scope, decimals, claimed: period.claimedThisPeriod, claimable: period.available, cap: period.periodAmount, onChain: true }
   }
 
-  const onchain = await readStreamState(client, caveats, delegationManager, m.delegationHash)
+  const onchain = await readStreamState(client, caveats, delegationManager, delegationHash)
   const metaMax = m.maxAmount ? BigInt(m.maxAmount) : MAX_UINT256
   if (onchain?.initialized) {
     return {
