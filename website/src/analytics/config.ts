@@ -9,7 +9,12 @@ import type { Address } from 'viem';
  * `src/config/addresses.ts` → chain 1 `ourglass`). Only charges routed to these
  * instances are attributable to OurGlass.
  */
-export const ANALYTICS_RPC_URL = 'https://ethereum-rpc.publicnode.com';
+// Mainnet RPC for the log scan. Must serve historical `eth_getLogs` without a key:
+// publicnode gates archive log queries behind a token, so the default is Tenderly's
+// public gateway (historical logs, no key). Override with a keyed endpoint (e.g.
+// Alchemy) via NEXT_PUBLIC_ANALYTICS_RPC_URL — inlined at build under static export.
+export const ANALYTICS_RPC_URL =
+  process.env.NEXT_PUBLIC_ANALYTICS_RPC_URL ?? 'https://gateway.tenderly.co/public/mainnet';
 
 // Addresses are checksummed literals copied from the Vite app's addresses.ts; the
 // `as Address` cast is the standard viem narrowing for a known-good hex string.
@@ -29,4 +34,4 @@ export const KNOWN_TOKENS: Record<string, { symbol: string; decimals: number }> 
 // deployed late June 2026, so a modest lookback covers all history cheaply; the
 // scanner halves the window adaptively if an RPC rejects the range.
 export const LOOKBACK_BLOCKS = 150_000n;
-export const SCAN_CHUNK_BLOCKS = 10_000n;
+export const SCAN_CHUNK_BLOCKS = 40_000n;

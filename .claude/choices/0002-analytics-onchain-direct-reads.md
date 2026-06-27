@@ -54,7 +54,10 @@ it degrades gracefully against provider range/result caps.
 **Negative:**
 - The browser scan only covers a bounded recent block window (`LOOKBACK_BLOCKS`);
   it is not a full-history index. Acceptable given the instances deployed days ago.
-- Each page load issues several `eth_getLogs` calls to a public RPC.
+- Each page load issues several `eth_getLogs` calls to a public RPC. The RPC must
+  serve historical logs without a key (publicnode gates these behind an archive
+  token), so the default is Tenderly's public gateway; override via
+  `NEXT_PUBLIC_ANALYTICS_RPC_URL` (e.g. a keyed Alchemy endpoint) for headroom.
 - No website unit-test runner exists, so the pure aggregation/delta functions ship
   without automated tests (kept pure and isolated for a later harness).
 
