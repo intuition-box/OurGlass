@@ -1,0 +1,107 @@
+import { type Address } from 'viem'
+
+export interface ChainAddresses {
+  delegationManager: Address
+  delegatorModuleFactory: Address
+  nativeTokenPeriodTransferEnforcer: Address
+  erc20PeriodTransferEnforcer: Address
+  nativeTokenTransferAmountEnforcer: Address
+  erc20TransferAmountEnforcer: Address
+  erc20MultiOperationIncreaseBalanceEnforcer: Address
+  valueLteEnforcer: Address
+  timestampEnforcer: Address
+  allowedTargetsEnforcer: Address
+  allowedMethodsEnforcer: Address
+  limitedCallsEnforcer: Address
+  argsEqualityCheckEnforcer: Address
+  exactCalldataEnforcer: Address
+  allowedCalldataEnforcer: Address
+  redeemerEnforcer: Address
+  delegationMetaSwapAdapter: Address
+  // OurGlass-owned instances of the audited enforcers (unmodified bytecode, deployed
+  // under the OurGlass CREATE2 salt). Present only on chains where they are deployed.
+  // The period enforcer doubles as the on-chain analytics marker — its
+  // TransferredInPeriod events are attributable to OurGlass by emitter address
+  // (see spec/plan-analytics.md and spec/ourglass-enforcer-instances.md).
+  ourglass?: {
+    erc20PeriodTransferEnforcer: Address
+    timestampEnforcer: Address
+    erc20StreamingEnforcer: Address
+  }
+}
+
+// DelegationManager from the Delegation Framework v1.3.0
+// Same across all chains (deterministic deployment)
+const DELEGATION_MANAGER: Address = '0xdb9B1e94B5b69Df7e401DDbedE43491141047dB3'
+
+// Enforcer addresses (same on Base Sepolia and Base Mainnet)
+const SHARED_ENFORCERS = {
+  nativeTokenPeriodTransferEnforcer: '0x9BC0FAf4Aca5AE429F4c06aEEaC517520CB16BD9' as Address,
+  erc20PeriodTransferEnforcer: '0x474e3Ae7E169e940607cC624Da8A15Eb120139aB' as Address,
+  nativeTokenTransferAmountEnforcer: '0xF71af580b9c3078fbc2BBF16FbB8EEd82b330320' as Address,
+  erc20TransferAmountEnforcer: '0xf100b0819427117EcF76Ed94B358B1A5b5C6D2Fc' as Address,
+  erc20MultiOperationIncreaseBalanceEnforcer: '0xeaA1bE91F0ea417820a765df9C5BE542286BFfDC' as Address,
+  valueLteEnforcer: '0x92Bf12322527cAA612fd31a0e810472BBB106A8F' as Address,
+  timestampEnforcer: '0x1046bb45C8d673d4ea75321280DB34899413c069' as Address,
+  allowedTargetsEnforcer: '0x7F20f61b1f09b08D970938F6fa563634d65c4EeB' as Address,
+  allowedMethodsEnforcer: '0x2c21fD0Cb9DC8445CB3fb0DC5E7Bb0Aca01842B5' as Address,
+  limitedCallsEnforcer: '0x04658B29F6b82ed55274221a06Fc97D318E25416' as Address,
+  argsEqualityCheckEnforcer: '0x44B8C6ae3C304213c3e298495e12497Ed3E56E41' as Address,
+  exactCalldataEnforcer: '0x99F2e9bF15ce5eC84685604836F71aB835DBBdED' as Address,
+  allowedCalldataEnforcer: '0xc2b0d624c1c4319760C96503BA27C347F3260f55' as Address,
+  redeemerEnforcer: '0xE144b0b2618071B4E56f746313528a669c7E65c5' as Address,
+  delegationMetaSwapAdapter: '0x5e4b49156D23D890e7DC264c378a443C2d22A80E' as Address,
+}
+
+export const addresses: Record<number, ChainAddresses> = {
+  // Base Sepolia (84532)
+  84532: {
+    delegationManager: DELEGATION_MANAGER,
+    delegatorModuleFactory: '0xE64ea779033131583cDE1c8862685051E09C4b78' as Address, // deployed on Base Sepolia
+    ...SHARED_ENFORCERS,
+  },
+  // Ethereum Sepolia (11155111) — DelegationManager + enforcers are the official
+  // deterministic MetaMask deployments; the DeleGatorModuleFactory is NOT
+  // deterministic and was deployed separately for this chain (see scripts/deploy-factory.mjs).
+  11155111: {
+    delegationManager: DELEGATION_MANAGER,
+    delegatorModuleFactory: '0x250435c7D339F03050c847c85f0108f44e876058' as Address,
+    ...SHARED_ENFORCERS,
+  },
+  // Base Mainnet (8453)
+  8453: {
+    delegationManager: DELEGATION_MANAGER,
+    delegatorModuleFactory: '0x0D0421e43057bf850e243EcDA2AD8966C8D5877B' as Address,
+    ...SHARED_ENFORCERS,
+  },
+  // Ethereum Mainnet (1) — DelegationManager + shared enforcers are the deterministic
+  // MetaMask deployments. The DeleGatorModuleFactory and the OurGlass enforcer
+  // instances were deployed on 2026-06-25 from the OWS `ourglass-deployer` wallet
+  // (0x2FF0363132d0dc5feb090790C46B77EF1ce96aa2); see
+  // spec/ourglass-enforcer-instances.md.
+  1: {
+    delegationManager: DELEGATION_MANAGER,
+    delegatorModuleFactory: '0xbDDE43bCf6Db9DBeB1127E6574CCF70BFb1c2DC3' as Address,
+    ...SHARED_ENFORCERS,
+    ourglass: {
+      erc20PeriodTransferEnforcer: '0x11262E3116a50654547AB0A417BE77eB14b9F339' as Address,
+      timestampEnforcer: '0xF1635460548F44543366ec4453D512a7Ce85Af85' as Address,
+      erc20StreamingEnforcer: '0xE475D14d61756D6e940B74C20d2E44EB70c71a8D' as Address,
+    },
+  },
+  // Localhost / Anvil (forked Base Sepolia, uses same chain ID)
+  // When running locally, the factory address comes from test/deployment.json
+  31337: {
+    delegationManager: DELEGATION_MANAGER,
+    delegatorModuleFactory: '0x0000000000000000000000000000000000000000' as Address, // Set from deployment.json
+    ...SHARED_ENFORCERS,
+  },
+}
+
+export function getAddresses(chainId: number): ChainAddresses {
+  const addrs = addresses[chainId]
+  if (!addrs) {
+    throw new Error(`Unsupported chain: ${chainId}`)
+  }
+  return addrs
+}

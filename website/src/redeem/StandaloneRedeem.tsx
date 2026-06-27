@@ -1,17 +1,17 @@
 import { useMemo, useRef, useState } from 'react'
 import { createPublicClient, http, isAddress, erc20Abi, formatUnits, type Address, type PublicClient, type WalletClient } from 'viem'
 import { useAccount, useConnect, useDisconnect, useWalletClient } from 'wagmi'
-import { importDelegationsJson, type StoredDelegation } from '../lib/storage'
-import { ipfsToHttp } from '../lib/subscriptionTerms'
-import { redeemSubscriptionDirect } from '../lib/redeemDirect'
-import { streamedAvailable } from '../lib/streamTerms'
-import { MAX_UINT256 } from '../lib/streamRate'
-import { useClaimState } from '../hooks/useClaimState'
-import { ClaimProgress } from '../ui/ClaimProgress'
-import { AnimatedAmount } from '../ui/AnimatedAmount'
-import { SELECTABLE_CHAINS, findChain, chainName, explorerTx, rpcUrl } from '../config/supported-chains'
-import { Logo, Card, Btn, StatusBadge, Payee, Mono } from '../ui/components'
-import { IconCheck, IconExt, IconAlert, IconLock, IconRepeat, IconDoc, IconCube, IconArrowL } from '../ui/icons'
+import { importDelegationsJson, type StoredDelegation } from './lib/storage'
+import { ipfsToHttp } from './lib/subscriptionTerms'
+import { redeemSubscriptionDirect } from './lib/redeemDirect'
+import { streamedAvailable } from './lib/streamTerms'
+import { MAX_UINT256 } from './lib/streamRate'
+import { useClaimState } from './hooks/useClaimState'
+import { ClaimProgress } from './ui/ClaimProgress'
+import { AnimatedAmount } from './ui/AnimatedAmount'
+import { SELECTABLE_CHAINS, findChain, chainName, explorerTx, rpcUrl } from './config/supported-chains'
+import { Logo, Card, Btn, StatusBadge, Payee, Mono } from './ui/components'
+import { IconCheck, IconExt, IconAlert, IconLock, IconRepeat, IconDoc, IconCube, IconArrowL } from './ui/icons'
 
 const isStream = (d: StoredDelegation) => d.meta.scopeType === 'erc20Streaming'
 
@@ -23,7 +23,7 @@ const tintFor = (addr: string) => {
   return palette[h % palette.length]
 }
 
-export default function StandaloneRedeem() {
+export function StandaloneRedeem() {
   const [chainId, setChainId] = useState(84532)
   const [jsonInput, setJsonInput] = useState('')
   const [sub, setSub] = useState<StoredDelegation | null>(null)
@@ -145,13 +145,13 @@ export default function StandaloneRedeem() {
   const httpUri = sub?.meta.agreement && !sub.meta.agreement.uri.startsWith('ipfs://local-') ? ipfsToHttp(sub.meta.agreement.uri) : undefined
 
   return (
-    <div className="min-h-screen">
+    <div className="og-redeem min-h-screen">
       <header className="sticky top-0 z-10 glass-strong">
         <div className="max-w-3xl mx-auto h-14 px-5 flex items-center justify-between border-b border-line">
           <Logo size={30} />
           <div className="flex items-center gap-2">
             <span className="text-xs text-faint">Biller console</span>
-            <select value={chainId} onChange={(e) => setChainId(Number(e.target.value))} className="h-9 text-sm" style={{ width: 'auto' }}>
+            <select aria-label="Network" value={chainId} onChange={(e) => setChainId(Number(e.target.value))} className="h-9 text-sm" style={{ width: 'auto' }}>
               {SELECTABLE_CHAINS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
             </select>
             {isConnected && address ? (
@@ -213,8 +213,8 @@ export default function StandaloneRedeem() {
                 <input ref={fileRef} type="file" accept=".json" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
               </div>
               <div>
-                <label className="text-sm font-medium text-ink block mb-1.5">Or paste JSON</label>
-                <textarea value={jsonInput} onChange={(e) => setJsonInput(e.target.value)} rows={6} placeholder='{"delegation": {…}, "meta": {…}}' className="font-mono text-xs" />
+                <label htmlFor="redeem-json" className="text-sm font-medium text-ink block mb-1.5">Or paste JSON</label>
+                <textarea id="redeem-json" value={jsonInput} onChange={(e) => setJsonInput(e.target.value)} rows={6} placeholder='{"delegation": {…}, "meta": {…}}' className="font-mono text-xs" />
                 <div className="mt-2"><Btn kind="secondary" onClick={() => parse(jsonInput)} disabled={!jsonInput.trim()}>Load subscription</Btn></div>
               </div>
               {error && (
@@ -275,8 +275,8 @@ export default function StandaloneRedeem() {
 
               <div className="mt-5 space-y-4">
                 <div>
-                  <label className="text-sm font-medium text-ink block mb-1.5">Pay to</label>
-                  <input type="text" placeholder="0x… recipient of the funds" value={recipient} onChange={(e) => setRecipient(e.target.value)} />
+                  <label htmlFor="redeem-recipient" className="text-sm font-medium text-ink block mb-1.5">Pay to</label>
+                  <input id="redeem-recipient" type="text" placeholder="0x… recipient of the funds" value={recipient} onChange={(e) => setRecipient(e.target.value)} />
                   {recipient && !isAddress(recipient) && <p className="text-xs text-danger mt-1">Invalid address</p>}
                 </div>
                 <div>
