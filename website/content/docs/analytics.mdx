@@ -76,16 +76,18 @@ From these events, filtered to our enforcer instances:
 
 ## Indexing
 
-- **Primary:** a subgraph keyed on the per-charge events from our enforcer
-  addresses (plus `RedeemedDelegation` / `DisabledDelegation`). Works on testnets
-  and is the decentralized-friendly indexer.
-- **Secondary:** a Dune dashboard once on mainnet, decoding the same events.
-
-The UI reads the subgraph over GraphQL — no private backend, no dependency on any
-single client's `localStorage`.
+- **Shipped now — direct client-side reads.** The [analytics page](/analytics)
+  reads the per-charge events straight from the OurGlass enforcer instances via
+  `eth_getLogs`, decodes them in the browser, and derives the metrics above. No
+  backend, no subgraph, no `localStorage` dependency — it works because
+  attribution is just the emitter address.
+- **Scale path — a subgraph.** For larger histories, a subgraph keyed on the same
+  events (plus `RedeemedDelegation` / `DisabledDelegation`) replaces the live scan
+  behind the same UI. A Dune dashboard can decode the same events for sharing.
 
 ## Status
 
-This is the planned analytics design, updated to cover streams alongside
-subscriptions. It is not yet implemented; only new agreements routed to the
-self-deployed enforcers would be attributable.
+The analytics page is live and reads on-chain directly. Only agreements routed to
+the self-deployed enforcer instances are attributable; the in-browser scan covers
+a bounded recent block window (ample for the current deployment), and a subgraph
+is the drop-in upgrade for unbounded history.
