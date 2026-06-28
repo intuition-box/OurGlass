@@ -111,13 +111,17 @@ export const INTUITION_NETWORKS: Record<IntuitionNetwork, IntuitionNetworkConfig
     graphqlUrl: 'https://mainnet.intuition.sh/v1/graphql',
     explorerUrl: 'https://explorer.intuition.systems',
     chain: intuitionMainnet,
-    // Mainnet term_ids unverified — resolve via pin-create until confirmed.
+    // Mainnet predicates verified 2026-06-29 (ADR 0003): owns + in context of
+    // reuse established atoms; delegate to is created on first publish (its id is
+    // deterministic from the pin payload — same as testnet).
     predicates: {
-      owns: { label: 'owns', termId: null, pin: { name: 'owns', description: '', image: '', url: '' } },
+      owns: {
+        label: 'owns',
+        termId: '0xdd3eb9326e013e0ffecb067709bbf6cb6352122e025faede9c887b7c9ac4b773',
+      },
       inContextOf: {
         label: 'in context of',
-        termId: null,
-        pin: { name: 'in context of', description: '', image: '', url: '' },
+        termId: '0x892054b01d389bfe566166120470f572a56e3d4cd88c599b52c4708949625390',
       },
       delegateTo: { label: 'delegate to', termId: null, pin: delegateToPin },
     },

@@ -61,8 +61,11 @@ const NETWORKS: Record<IntuitionNetwork, IntuitionReadConfig> = {
     graphqlUrl: 'https://mainnet.intuition.sh/v1/graphql',
     explorerUrl: 'https://explorer.intuition.systems',
     chain: intuitionMainnet,
-    // term_ids unknown until the predicates are created on mainnet (see ADR 0003).
-    predicates: { delegateTo: null, inContextOf: '0x' },
+    // Mainnet predicates verified 2026-06-29 (ADR 0003).
+    predicates: {
+      delegateTo: '0xb56980d42a3b03455bf41ea20fe04ae223fca0b9e688994dc661414e81e6433b',
+      inContextOf: '0x892054b01d389bfe566166120470f572a56e3d4cd88c599b52c4708949625390',
+    },
   },
 }
 

@@ -20,8 +20,11 @@ const READ: Record<IntuitionNetwork, OrgReadConfig> = {
     network: 'testnet',
     owns: '0xdd3eb9326e013e0ffecb067709bbf6cb6352122e025faede9c887b7c9ac4b773',
   },
-  // term_ids unknown until predicates are created on mainnet (see ADR 0003).
-  mainnet: { graphqlUrl: 'https://mainnet.intuition.sh/v1/graphql', network: 'mainnet', owns: null },
+  mainnet: {
+    graphqlUrl: 'https://mainnet.intuition.sh/v1/graphql',
+    network: 'mainnet',
+    owns: '0xdd3eb9326e013e0ffecb067709bbf6cb6352122e025faede9c887b7c9ac4b773',
+  },
 }
 
 function activeRead(): OrgReadConfig {
