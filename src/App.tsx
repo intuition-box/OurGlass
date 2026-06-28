@@ -2,19 +2,17 @@ import { useState, type ComponentType } from 'react'
 import Home from './pages/Home'
 import CreateDelegation from './pages/CreateDelegation'
 import CreateStream from './pages/CreateStream'
-import ImportDelegation from './pages/ImportDelegation'
 import Charge from './pages/Charge'
 import { Logo, Card } from './ui/components'
-import { IconGrid, IconPlus, IconBolt, IconLink, IconRepeat, IconLock, IconArrowR } from './ui/icons'
+import { IconGrid, IconPlus, IconBolt, IconRepeat, IconLock, IconArrowR } from './ui/icons'
 
-type Page = 'home' | 'create' | 'import' | 'redeem'
+type Page = 'home' | 'create' | 'redeem'
 type CreateMode = 'choose' | 'subscription' | 'stream'
 
 const NAV: { key: Page; label: string; icon: ComponentType<{ size?: number }> }[] = [
   { key: 'home', label: 'Overview', icon: IconGrid },
   { key: 'create', label: 'Create', icon: IconPlus },
   { key: 'redeem', label: 'Charge', icon: IconBolt },
-  { key: 'import', label: 'Import', icon: IconLink },
 ]
 
 function ChoiceCard({
@@ -134,7 +132,6 @@ function AppInner() {
           {page === 'create' && createMode === 'choose' && <CreateChoice onPick={setCreateMode} />}
           {page === 'create' && createMode === 'subscription' && <CreateDelegation />}
           {page === 'create' && createMode === 'stream' && <CreateStream />}
-          {page === 'import' && <ImportDelegation />}
           {page === 'redeem' && <Charge />}
         </main>
       </div>

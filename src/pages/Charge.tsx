@@ -1,13 +1,14 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSafeAppsSDK } from '@safe-global/safe-apps-react-sdk'
 import { createPublicClient, http, isAddress, erc20Abi, formatUnits, BaseError, type Address } from 'viem'
-import { getDelegations, type StoredDelegation } from '../lib/storage'
+import { importDelegationsJson, type StoredDelegation } from '../lib/storage'
 import { buildRedeemTx } from '../lib/redeemDirect'
 import { useClaimState } from '../hooks/useClaimState'
 import { useClaimTotals, type ClaimTotals } from '../hooks/useClaimTotals'
+import { useIncomingDelegations } from '../hooks/useIncomingDelegations'
 import { ClaimProgress } from '../ui/ClaimProgress'
 import { Card, Btn, StatusBadge, Payee, Mono, USDC } from '../ui/components'
-import { IconBolt, IconCheck, IconLock, IconArrowL, IconRepeat } from '../ui/icons'
+import { IconBolt, IconCheck, IconLock, IconArrowL, IconRepeat, IconDoc, IconAlert, IconLink } from '../ui/icons'
 import { findChain, rpcUrl } from '../config/supported-chains'
 
 const isStream = (d: StoredDelegation) => d.meta.scopeType === 'erc20Streaming'
@@ -69,23 +70,19 @@ export default function Charge() {
   const [error, setError] = useState<string | null>(null)
   const [safeTxHash, setSafeTxHash] = useState<string | null>(null)
   const [amountEdited, setAmountEdited] = useState(false)
+  const [showImport, setShowImport] = useState(false)
+  const [jsonInput, setJsonInput] = useState('')
+  const [importError, setImportError] = useState<string | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
 
   // Claimed / claimable / cap for the selected delegation, read from the caveat
   // enforcer (stream lifetime cap, or subscription per-period cap).
   const claim = useClaimState(selected)
 
-  // This Safe can only redeem delegations where it is the delegate (payee) —
-  // both per-period subscriptions and accumulating streams.
-  const subs = useMemo(
-    () =>
-      getDelegations().filter(
-        (d) =>
-          d.delegation.delegate.toLowerCase() === safe.safeAddress.toLowerCase() &&
-          (d.meta.scopeType === 'erc20SpendingLimit' || d.meta.scopeType === 'erc20Streaming') &&
-          d.meta.status === 'signed',
-      ),
-    [safe.safeAddress],
-  )
+  // Delegations made TO this Safe (it is the delegate/payee), discovered on the
+  // Intuition graph and confirmed enabled on-chain. Manual import is the fallback.
+  const incoming = useIncomingDelegations(safe.safeAddress as Address, safe.chainId)
+  const subs = incoming.delegations
 
   // Aggregate stats over the chargeable delegations (list view only — skip the
   // on-chain reads while a single delegation is open).
@@ -100,6 +97,29 @@ export default function Charge() {
     setRecipient(d.meta.recipient ?? '')
     setError(null)
     setSafeTxHash(null)
+  }
+
+  function importAndPick(text: string) {
+    setImportError(null)
+    try {
+      const d = importDelegationsJson(text)[0]
+      if (!d) throw new Error('No delegation found in JSON')
+      setShowImport(false)
+      pick(d)
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : 'Invalid delegation JSON')
+    }
+  }
+
+  function handleImportFile(file: File) {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      // readAsText always yields a string result.
+      const text = e.target?.result as string
+      setJsonInput(text)
+      importAndPick(text)
+    }
+    reader.readAsText(file)
   }
 
   // Pre-fill the claim amount with the claimable balance, until the user edits it.
@@ -251,11 +271,48 @@ export default function Charge() {
         </div>
       </div>
 
-      {subs.length === 0 ? (
+      {showImport ? (
+        <div className="mt-5 space-y-3">
+          <Card className="p-6 space-y-5">
+            <div
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleImportFile(f) }}
+              onClick={() => fileRef.current?.click()}
+              className="rounded-2xl p-8 text-center cursor-pointer transition-colors"
+              style={{ boxShadow: 'inset 0 0 0 1.5px var(--color-line)' }}
+            >
+              <div className="grid place-items-center w-11 h-11 rounded-2xl bg-raised ring-1 ring-line mx-auto text-faint"><IconDoc size={20} /></div>
+              <p className="text-sm text-dim mt-3">Drop a delegation JSON or <span style={{ color: 'var(--accent)' }}>click to browse</span></p>
+              <input ref={fileRef} type="file" accept=".json" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImportFile(f) }} />
+            </div>
+            <div>
+              <label htmlFor="charge-import-json" className="text-sm font-medium text-ink block mb-1.5">Or paste JSON</label>
+              <textarea id="charge-import-json" value={jsonInput} onChange={(e) => setJsonInput(e.target.value)} rows={6} placeholder='{"delegation": {…}, "meta": {…}}' className="font-mono text-xs" />
+              <div className="mt-2"><Btn kind="secondary" icon={<IconLink size={16} />} onClick={() => importAndPick(jsonInput)} disabled={!jsonInput.trim()}>Load delegation</Btn></div>
+            </div>
+            {importError && (
+              <div className="rounded-xl px-3 py-2 text-sm text-danger flex items-center gap-2" style={{ background: 'rgba(251,113,133,.10)', boxShadow: 'inset 0 0 0 1px rgba(251,113,133,.30)' }}><IconAlert size={15} /> {importError}</div>
+            )}
+          </Card>
+          <div className="text-center pt-1"><button onClick={() => { setShowImport(false); setImportError(null) }} className="text-xs text-faint hover:text-dim transition">Back to my delegations</button></div>
+        </div>
+      ) : incoming.loading ? (
+        <Card className="p-10 text-center mt-5"><p className="text-sm text-faint">Reading delegations from Intuition…</p></Card>
+      ) : incoming.error ? (
+        <Card className="p-10 text-center mt-5">
+          <div className="grid place-items-center w-12 h-12 rounded-2xl bg-raised ring-1 ring-line mx-auto text-faint"><IconAlert size={22} /></div>
+          <h2 className="text-base font-semibold text-ink mt-4">Couldn’t read delegations from Intuition</h2>
+          <div className="mt-4 flex items-center justify-center gap-2">
+            <Btn kind="secondary" onClick={incoming.refetch}>Retry</Btn>
+            <Btn kind="ghost" onClick={() => setShowImport(true)}>Import manually</Btn>
+          </div>
+        </Card>
+      ) : subs.length === 0 ? (
         <Card className="p-10 text-center mt-5">
           <div className="grid place-items-center w-12 h-12 rounded-2xl bg-raised ring-1 ring-line mx-auto text-faint"><IconBolt size={22} /></div>
-          <h2 className="text-base font-semibold text-ink mt-4">No chargeable subscriptions</h2>
-          <p className="text-sm text-dim mt-1 max-w-sm mx-auto">Subscriptions where this Safe ({short(safe.safeAddress)}) is the payee appear here, ready to charge every period.</p>
+          <h2 className="text-base font-semibold text-ink mt-4">No chargeable delegations</h2>
+          <p className="text-sm text-dim mt-1 max-w-sm mx-auto">Delegations made to this Safe (<Mono className="text-dim">{short(safe.safeAddress)}</Mono>) appear here once they’re recorded on Intuition, ready to charge every period.</p>
+          <div className="mt-4"><Btn kind="ghost" onClick={() => setShowImport(true)}>Manually import a delegation</Btn></div>
         </Card>
       ) : (
         <div className="mt-5">
@@ -281,6 +338,7 @@ export default function Charge() {
             )
           })}
           </div>
+          <div className="text-center pt-4"><button onClick={() => setShowImport(true)} className="text-xs text-faint hover:text-dim transition">Manually import a delegation</button></div>
         </div>
       )}
     </div>

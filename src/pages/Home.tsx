@@ -11,7 +11,7 @@ import { Card, Btn, StatusBadge, Payee, type Status } from '../ui/components'
 import { IconChip, IconCheck, IconPlus, IconRepeat, IconLock, IconCube, IconExt, IconAlert, IconArrowR } from '../ui/icons'
 import { findChain, rpcUrl } from '../config/supported-chains'
 
-type Page = 'home' | 'create' | 'import' | 'redeem'
+type Page = 'home' | 'create' | 'redeem'
 
 function tintFor(addr: string): { tint: string; logo: string } {
   const palette = ['#3B82F6', '#22D3EE', '#8B5CF6', '#34D399', '#FB7185', '#FBBF24']
