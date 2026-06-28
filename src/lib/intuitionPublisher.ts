@@ -1,5 +1,6 @@
+import type { Hex } from 'viem'
 import type { DelegationStruct } from './delegations'
-import type { DelegationDetails } from './intuition'
+import type { DelegationDetails, IntuitionNetwork } from './intuition'
 
 /**
  * Client for the Intuition publisher backend. The browser cannot hold the
@@ -17,7 +18,8 @@ export interface PublishRequest {
 
 export interface PublishResponse {
   uri: string
-  result: unknown
+  // The publisher returns the full PublishResult; we only read these fields.
+  result: { network: IntuitionNetwork; atoms: { delegationJson: Hex } }
 }
 
 export function intuitionPublisherUrl(): string | null {

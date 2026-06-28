@@ -5,6 +5,7 @@ import { DeleGatorModuleFactoryABI, SafeABI } from '../config/abis'
 import { getAddresses } from '../config/addresses'
 import { buildModuleInstallTxs, DEFAULT_SALT } from '../lib/module'
 import { getDelegations, type StoredDelegation } from '../lib/storage'
+import { portalAtomUrl } from '../lib/intuition'
 import { periodToSeconds, isPeriodType } from '../lib/enforcers'
 import { SubscriptionDetail } from './SubscriptionDetail'
 import { Card, Btn, StatusBadge, Payee, type Status } from '../ui/components'
@@ -54,19 +55,31 @@ function SubCard({ d, onOpen }: { d: StoredDelegation; onOpen: () => void }) {
           <div className="text-ink font-semibold mt-0.5 font-mono tnum">{(stream ? d.meta.ratePerPeriod : d.meta.amount) ?? '—'}</div>
         </div>
       </div>
-      {d.meta.agreement && (
-        <div className="mt-4 pt-4 border-t border-line">
-          <a
-            href={d.meta.agreement.uri.startsWith('ipfs://local-') ? undefined : `https://gateway.pinata.cloud/ipfs/${d.meta.agreement.cid}`}
-            target="_blank"
-            rel="noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="inline-flex items-center gap-1.5 text-xs font-mono text-dim hover:text-[color:var(--accent)] transition"
-          >
-            <IconCube size={13} /> {d.meta.agreement.cid.slice(0, 16)}… <IconExt size={11} className="opacity-60" />
-          </a>
-        </div>
-      )}
+      {(() => {
+        // Prefer the Intuition portal (the DelegationJson atom); fall back to the
+        // real IPFS link. An offline `local-` pin has no working URL → no link.
+        const portal = d.meta.intuition
+          ? portalAtomUrl(d.meta.intuition.atomId, d.meta.intuition.network)
+          : undefined
+        const ipfs = d.meta.agreement && !d.meta.agreement.uri.startsWith('ipfs://local-')
+          ? `https://gateway.pinata.cloud/ipfs/${d.meta.agreement.cid}`
+          : undefined
+        const href = portal ?? ipfs
+        if (!href) return null
+        return (
+          <div className="mt-4 pt-4 border-t border-line">
+            <a
+              href={href}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex items-center gap-1.5 text-xs font-mono text-dim hover:text-[color:var(--accent)] transition"
+            >
+              <IconCube size={13} /> {portal ? 'View on Intuition' : `${d.meta.agreement!.cid.slice(0, 16)}…`} <IconExt size={11} className="opacity-60" />
+            </a>
+          </div>
+        )
+      })()}
     </Card>
   )
 }

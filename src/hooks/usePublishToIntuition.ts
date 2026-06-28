@@ -1,4 +1,6 @@
 import { useCallback, useState } from 'react'
+import type { Hex } from 'viem'
+import type { IntuitionNetwork } from '../lib/intuition'
 import {
   intuitionPublisherUrl,
   publishDelegationToIntuition,
@@ -11,6 +13,9 @@ export interface PublishStatus {
   state: PublishState
   uri?: string
   message?: string
+  /** The DelegationJson atom id + network, set on success (for portal links). */
+  atomId?: Hex
+  network?: IntuitionNetwork
 }
 
 /**
@@ -30,7 +35,14 @@ export function usePublishToIntuition(): {
     if (!intuitionPublisherUrl()) return
     setStatus({ state: 'publishing' })
     publishDelegationToIntuition(req)
-      .then((res) => setStatus({ state: 'done', uri: res.uri }))
+      .then((res) =>
+        setStatus({
+          state: 'done',
+          uri: res.uri,
+          atomId: res.result.atoms.delegationJson,
+          network: res.result.network,
+        }),
+      )
       .catch((err: unknown) =>
         setStatus({ state: 'error', message: err instanceof Error ? err.message : 'publish failed' }),
       )

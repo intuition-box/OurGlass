@@ -17,7 +17,7 @@ import {
 import { MAX_UINT256, perSecondForTotal } from '../lib/streamRate'
 import { readErc20Meta } from '../lib/erc20'
 import { getEnvironment } from '../lib/environment'
-import { saveDelegation, getDelegations, type StoredDelegation } from '../lib/storage'
+import { saveDelegation, getDelegations, setDelegationIntuition, type StoredDelegation } from '../lib/storage'
 import { usePublishToIntuition } from '../hooks/usePublishToIntuition'
 import { Card, Btn, GaslessButton, USDC, Mono, CopyChip, Payee } from '../ui/components'
 import { IconCube, IconLock, IconCheck, IconExt, IconHash, IconCal } from '../ui/icons'
@@ -96,6 +96,17 @@ export default function CreateStream() {
 
   const { publish: publishToIntuition, status: intuitionStatus, enabled: intuitionEnabled } =
     usePublishToIntuition()
+
+  // Persist the published DelegationJson atom so the overview can deep-link to the
+  // Intuition portal instead of the (possibly offline) IPFS link.
+  useEffect(() => {
+    if (signed && intuitionStatus.state === 'done' && intuitionStatus.atomId && intuitionStatus.network) {
+      setDelegationIntuition(signed.meta.delegationHash, {
+        atomId: intuitionStatus.atomId,
+        network: intuitionStatus.network,
+      })
+    }
+  }, [signed, intuitionStatus])
 
   const defaultUsdc = USDC_ADDRESS[safe.chainId]
   const tokenAddress = useCustomToken ? customToken : defaultUsdc

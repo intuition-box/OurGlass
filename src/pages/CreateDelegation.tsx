@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useSafeAppsSDK } from '@safe-global/safe-apps-react-sdk'
 import { createPublicClient, http, isAddress, parseUnits, type Address, type Hex } from 'viem'
 import { createDelegation } from '@metamask/smart-accounts-kit'
@@ -17,7 +17,7 @@ import {
 } from '../lib/subscriptionTerms'
 import { periodToSeconds, periodLabel, periodNoun, type PeriodType } from '../lib/enforcers'
 import { getEnvironment } from '../lib/environment'
-import { saveDelegation, type StoredDelegation } from '../lib/storage'
+import { saveDelegation, setDelegationIntuition, type StoredDelegation } from '../lib/storage'
 import { usePublishToIntuition } from '../hooks/usePublishToIntuition'
 import { Card, Btn, GaslessButton, USDC, Mono, CopyChip, Payee, StatusBadge } from '../ui/components'
 import { IconCube, IconLock, IconCheck, IconExt, IconHash, IconCal } from '../ui/icons'
@@ -76,6 +76,17 @@ export default function CreateDelegation() {
 
   const { publish: publishToIntuition, status: intuitionStatus, enabled: intuitionEnabled } =
     usePublishToIntuition()
+
+  // Persist the published DelegationJson atom so the overview can deep-link to the
+  // Intuition portal instead of the (possibly offline) IPFS link.
+  useEffect(() => {
+    if (signed && intuitionStatus.state === 'done' && intuitionStatus.atomId && intuitionStatus.network) {
+      setDelegationIntuition(signed.meta.delegationHash, {
+        atomId: intuitionStatus.atomId,
+        network: intuitionStatus.network,
+      })
+    }
+  }, [signed, intuitionStatus])
 
   const defaultUsdc = USDC_ADDRESS[safe.chainId]
   const tokenAddress = useCustomToken ? customToken : defaultUsdc

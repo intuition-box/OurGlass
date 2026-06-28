@@ -1,6 +1,7 @@
 export {
   INTUITION_NETWORKS,
   getIntuitionNetwork,
+  portalAtomUrl,
   intuitionTestnet,
   intuitionMainnet,
   multiVaultAbi,

@@ -128,6 +128,14 @@ export function getIntuitionNetwork(network: IntuitionNetwork): IntuitionNetwork
   return INTUITION_NETWORKS[network]
 }
 
+/** Link to an atom on the Intuition portal (dev portal for testnet). */
+export function portalAtomUrl(atomId: Hex, network: IntuitionNetwork): string {
+  const base = network === 'mainnet'
+    ? 'https://portal.intuition.systems'
+    : 'https://dev.portal.intuition.systems'
+  return `${base}/explore/atom/${atomId}?tab=overview`
+}
+
 /** MultiVault surface used by the write service. */
 export const multiVaultAbi = parseAbi([
   'function getAtomCost() view returns (uint256)',
