@@ -256,16 +256,15 @@ export default function CreateDelegation() {
             <Row label="Charge"><span className="font-mono font-semibold text-ink">{signed.meta.amount} {signed.meta.tokenAddress ? 'USDC' : ''} / {signed.meta.period}</span></Row>
             <Row label="Contract hash"><Mono className="text-xs text-dim">{short(signed.meta.agreement!.termsHash)}</Mono></Row>
             <Row label="Delegation hash"><Mono className="text-xs text-dim">{short(signed.meta.delegationHash)}</Mono></Row>
-            {intuitionEnabled && (
-              <Row label="Intuition">
-                <Mono className="text-xs text-dim">
-                  {intuitionStatus.state === 'publishing' && 'recording on graph…'}
-                  {intuitionStatus.state === 'done' && 'recorded on graph'}
-                  {intuitionStatus.state === 'error' && `not recorded — ${intuitionStatus.message}`}
-                  {intuitionStatus.state === 'idle' && '—'}
-                </Mono>
-              </Row>
-            )}
+            <Row label="Intuition">
+              <Mono className="text-xs text-dim">
+                {!intuitionEnabled && 'publishing not configured'}
+                {intuitionEnabled && intuitionStatus.state === 'publishing' && 'recording on graph…'}
+                {intuitionEnabled && intuitionStatus.state === 'done' && 'recorded on graph'}
+                {intuitionEnabled && intuitionStatus.state === 'error' && `not recorded — ${intuitionStatus.message}`}
+                {intuitionEnabled && intuitionStatus.state === 'idle' && '—'}
+              </Mono>
+            </Row>
           </div>
 
           <div className="mt-5 flex flex-wrap gap-2">
