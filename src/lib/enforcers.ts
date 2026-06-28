@@ -35,3 +35,19 @@ export function periodLabel(period: PeriodType): string {
       return 'per month'
   }
 }
+
+/** The bare period noun, e.g. "month" — for "300 USDC / month" style copy. */
+export function periodNoun(period: PeriodType): string {
+  switch (period) {
+    case 'minutely':
+      return 'minute'
+    case 'hourly':
+      return 'hour'
+    case 'daily':
+      return 'day'
+    case 'weekly':
+      return 'week'
+    case 'monthly':
+      return 'month'
+  }
+}

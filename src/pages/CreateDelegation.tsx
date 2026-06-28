@@ -15,9 +15,10 @@ import {
   type AgreementDocument,
   type PinResult,
 } from '../lib/subscriptionTerms'
-import { periodToSeconds, periodLabel, type PeriodType } from '../lib/enforcers'
+import { periodToSeconds, periodLabel, periodNoun, type PeriodType } from '../lib/enforcers'
 import { getEnvironment } from '../lib/environment'
 import { saveDelegation, type StoredDelegation } from '../lib/storage'
+import { usePublishToIntuition } from '../hooks/usePublishToIntuition'
 import { Card, Btn, GaslessButton, USDC, Mono, CopyChip, Payee, StatusBadge } from '../ui/components'
 import { IconCube, IconLock, IconCheck, IconExt, IconHash, IconCal } from '../ui/icons'
 import { findChain, USDC_ADDRESS, rpcUrl } from '../config/supported-chains'
@@ -72,6 +73,9 @@ export default function CreateDelegation() {
   const [pinnedCid, setPinnedCid] = useState<string | null>(null)
   const [signed, setSigned] = useState<StoredDelegation | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  const { publish: publishToIntuition, status: intuitionStatus, enabled: intuitionEnabled } =
+    usePublishToIntuition()
 
   const defaultUsdc = USDC_ADDRESS[safe.chainId]
   const tokenAddress = useCustomToken ? customToken : defaultUsdc
@@ -202,6 +206,15 @@ export default function CreateDelegation() {
       }
       saveDelegation(stored)
       setSigned(stored)
+
+      // Record the signed delegation on the Intuition graph (fire-and-forget via
+      // the publisher backend — failures never block the create flow).
+      publishToIntuition({
+        delegation: stored.delegation,
+        chainId: safe.chainId,
+        details: { kind: 'subscription', amount, tokenSymbol, period: periodNoun(period) },
+        organization: { name: payeeName || 'OurGlass' },
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to sign subscription')
     } finally {
@@ -243,6 +256,16 @@ export default function CreateDelegation() {
             <Row label="Charge"><span className="font-mono font-semibold text-ink">{signed.meta.amount} {signed.meta.tokenAddress ? 'USDC' : ''} / {signed.meta.period}</span></Row>
             <Row label="Contract hash"><Mono className="text-xs text-dim">{short(signed.meta.agreement!.termsHash)}</Mono></Row>
             <Row label="Delegation hash"><Mono className="text-xs text-dim">{short(signed.meta.delegationHash)}</Mono></Row>
+            {intuitionEnabled && (
+              <Row label="Intuition">
+                <Mono className="text-xs text-dim">
+                  {intuitionStatus.state === 'publishing' && 'recording on graph…'}
+                  {intuitionStatus.state === 'done' && 'recorded on graph'}
+                  {intuitionStatus.state === 'error' && `not recorded — ${intuitionStatus.message}`}
+                  {intuitionStatus.state === 'idle' && '—'}
+                </Mono>
+              </Row>
+            )}
           </div>
 
           <div className="mt-5 flex flex-wrap gap-2">

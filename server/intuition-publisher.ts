@@ -1,0 +1,174 @@
+import { createPublicClient, createWalletClient, http, isHex, isAddress, type Address, type Hex } from 'viem'
+import { privateKeyToAccount } from 'viem/accounts'
+import {
+  buildDelegationDocument,
+  createGraphqlPinner,
+  createViemChain,
+  getIntuitionNetwork,
+  publishDelegation,
+  type DelegationDetails,
+  type DelegationKind,
+  type IntuitionNetwork,
+} from '../src/lib/intuition'
+import type { DelegationStruct } from '../src/lib/delegations'
+
+/**
+ * Intuition publisher: a node-side service that holds the funded attestor key and
+ * records a signed OurGlass delegation on the Intuition graph. The Safe App calls
+ * it right after a delegation is signed (the browser cannot hold the key). It
+ * builds the DelegationJson document, pins it to IPFS, and writes the ontology.
+ *
+ * Env: INTUITION_ATTESTOR_PK (required), PINATA_JWT (required), INTUITION_NETWORK
+ * (testnet|mainnet, default testnet), PORT (default 8787), ALLOWED_ORIGIN
+ * (default *), PUBLISH_SECRET (optional — if set, require x-publish-secret).
+ */
+
+const pk = process.env.INTUITION_ATTESTOR_PK
+const pinataJwt = process.env.PINATA_JWT
+if (!pk || !isHex(pk)) throw new Error('INTUITION_ATTESTOR_PK must be a 0x private key')
+if (!pinataJwt) throw new Error('PINATA_JWT is required')
+
+const network = (process.env.INTUITION_NETWORK ?? 'testnet') as IntuitionNetwork
+const port = Number(process.env.PORT ?? '8787')
+const allowedOrigin = process.env.ALLOWED_ORIGIN ?? '*'
+const publishSecret = process.env.PUBLISH_SECRET
+
+const config = getIntuitionNetwork(network)
+const account = privateKeyToAccount(pk)
+const transport = http(config.rpcUrl)
+const chain = createViemChain(
+  createPublicClient({ chain: config.chain, transport }),
+  createWalletClient({ account, chain: config.chain, transport }),
+  config.multiVault,
+)
+const pinner = createGraphqlPinner(config.graphqlUrl)
+
+interface PublishBody {
+  delegation: DelegationStruct
+  chainId: number
+  details: DelegationDetails
+  organization?: { name?: string; url?: string }
+}
+
+function asHex(value: unknown, field: string): Hex {
+  if (typeof value !== 'string' || !isHex(value)) throw new Error(`invalid hex: ${field}`)
+  return value
+}
+
+function asAddress(value: unknown, field: string): Address {
+  if (typeof value !== 'string' || !isAddress(value)) throw new Error(`invalid address: ${field}`)
+  return value
+}
+
+const KINDS: DelegationKind[] = ['subscription', 'stream']
+
+function parseBody(raw: unknown): PublishBody {
+  if (typeof raw !== 'object' || raw === null) throw new Error('body must be an object')
+  const b = raw as Record<string, unknown>
+  const d = b.delegation as Record<string, unknown> | undefined
+  if (!d) throw new Error('delegation is required')
+  if (!Array.isArray(d.caveats)) throw new Error('delegation.caveats must be an array')
+  const delegation: DelegationStruct = {
+    delegate: asAddress(d.delegate, 'delegation.delegate'),
+    delegator: asAddress(d.delegator, 'delegation.delegator'),
+    authority: asHex(d.authority, 'delegation.authority'),
+    caveats: d.caveats.map((c, i) => {
+      const cv = c as Record<string, unknown>
+      return { enforcer: asAddress(cv.enforcer, `caveat[${i}].enforcer`), terms: asHex(cv.terms, `caveat[${i}].terms`) }
+    }),
+    salt: asHex(d.salt, 'delegation.salt'),
+    signature: asHex(d.signature, 'delegation.signature'),
+  }
+  const chainId = Number(b.chainId)
+  if (!Number.isInteger(chainId) || chainId <= 0) throw new Error('chainId must be a positive integer')
+  const det = b.details as Record<string, unknown> | undefined
+  if (!det || !KINDS.includes(det.kind as DelegationKind)) throw new Error('details.kind must be subscription|stream')
+  const details: DelegationDetails = {
+    kind: det.kind as DelegationKind,
+    amount: String(det.amount ?? ''),
+    tokenSymbol: String(det.tokenSymbol ?? ''),
+    period: String(det.period ?? ''),
+  }
+  const org = b.organization as { name?: string; url?: string } | undefined
+  return { delegation, chainId, details, organization: org }
+}
+
+async function pinToPinata(jwt: string, content: unknown, name: string): Promise<string> {
+  const res = await fetch('https://api.pinata.cloud/pinning/pinJSONToIPFS', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
+    body: JSON.stringify({ pinataContent: content, pinataMetadata: { name } }),
+  })
+  if (!res.ok) throw new Error(`Pinata pin failed (${res.status}): ${await res.text()}`)
+  return `ipfs://${((await res.json()) as { IpfsHash: string }).IpfsHash}`
+}
+
+// Serialize publishes so concurrent requests don't collide on the attestor nonce.
+let queue: Promise<unknown> = Promise.resolve()
+function enqueue<T>(fn: () => Promise<T>): Promise<T> {
+  const run = queue.then(fn, fn)
+  queue = run.catch(() => undefined)
+  return run
+}
+
+async function handlePublish(body: PublishBody): Promise<{ uri: string; result: unknown }> {
+  const doc = buildDelegationDocument({ delegation: body.delegation, details: body.details })
+  const uri = await pinToPinata(pinataJwt!, doc, 'ourglass-delegation')
+  const result = await publishDelegation(
+    { chain, pinner, config },
+    {
+      delegator: { address: body.delegation.delegator, chainId: body.chainId },
+      recipient: { kind: 'caip10', address: body.delegation.delegate, chainId: body.chainId },
+      organization: {
+        name: body.organization?.name ?? 'OurGlass',
+        description: '',
+        image: '',
+        url: body.organization?.url ?? '',
+        email: '',
+      },
+      agreementUri: uri,
+    },
+  )
+  return { uri, result }
+}
+
+function cors(): Record<string, string> {
+  return {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, x-publish-secret',
+  }
+}
+
+function json(payload: unknown, status: number): Response {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { 'Content-Type': 'application/json', ...cors() },
+  })
+}
+
+Bun.serve({
+  port,
+  async fetch(req) {
+    if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors() })
+    const url = new URL(req.url)
+    if (req.method === 'GET' && url.pathname === '/health') {
+      return json({ ok: true, network, attestor: account.address }, 200)
+    }
+    if (req.method === 'POST' && url.pathname === '/publish') {
+      if (publishSecret && req.headers.get('x-publish-secret') !== publishSecret) {
+        return json({ error: 'unauthorized' }, 401)
+      }
+      try {
+        const body = parseBody(await req.json())
+        const out = await enqueue(() => handlePublish(body))
+        return json(out, 200)
+      } catch (err) {
+        return json({ error: err instanceof Error ? err.message : 'publish failed' }, 400)
+      }
+    }
+    return json({ error: 'not found' }, 404)
+  },
+})
+
+console.log(`intuition-publisher on :${port} → ${network} (attestor ${account.address})`)
