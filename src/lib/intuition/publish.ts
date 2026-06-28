@@ -27,19 +27,25 @@ import type {
  * flow is idempotent — re-running skips terms that already exist.
  */
 
+/**
+ * The org that owns the delegator Safe — reuse an existing Organization atom by
+ * id (e.g. "Base"), or create a new one from a name. Omit to skip the owns edge.
+ */
+export type OrganizationInput = { atomId: Hex } | { name: string; url?: string }
+
 export interface PublishDelegationInput {
   delegator: { address: Address; chainId: number }
   recipient: RecipientAtom
-  organization: OrganizationMeta
+  organization?: OrganizationInput
   /** The DelegationJson: the agreement OurGlass already pinned (ipfs://...). */
   agreementUri: string
 }
 
 export interface PublishResult {
   network: IntuitionNetwork
-  predicates: { owns: Hex; delegateTo: Hex; inContextOf: Hex }
-  atoms: { delegator: Hex; recipient: Hex; organization: Hex; delegationJson: Hex }
-  triples: { relationship: Hex; ownership: Hex; context: Hex }
+  predicates: { owns: Hex | null; delegateTo: Hex; inContextOf: Hex }
+  atoms: { delegator: Hex; recipient: Hex; organization: Hex | null; delegationJson: Hex }
+  triples: { relationship: Hex; ownership: Hex | null; context: Hex }
   /** term_ids actually created this run (empty on a full re-run). */
   created: Hex[]
 }
@@ -100,7 +106,6 @@ export async function publishDelegation(
     return ensureAtom(await pinner.pinThing(ref.pin))
   }
 
-  const owns = await resolvePredicate(config.predicates.owns)
   const delegateTo = await resolvePredicate(config.predicates.delegateTo)
   const inContextOf = await resolvePredicate(config.predicates.inContextOf)
 
@@ -108,11 +113,36 @@ export async function publishDelegation(
     caip10Uri(input.delegator.chainId, input.delegator.address),
   )
   const recipientAtom = await ensureAtom(recipientUri(input.recipient, config.chainId))
-  const organizationAtom = await ensureAtom(await pinner.pinOrganization(input.organization))
   const delegationJsonAtom = await ensureAtom(input.agreementUri)
 
+  // Organization is optional: reuse an existing atom by id, create one from a
+  // name, or skip the ownership edge entirely.
+  let owns: Hex | null = null
+  let organizationAtom: Hex | null = null
+  let ownership: Hex | null = null
+  if (input.organization) {
+    if ('atomId' in input.organization) {
+      if (!(await chain.isTermCreated(input.organization.atomId))) {
+        throw new Error(
+          `organization atom ${input.organization.atomId} not found on ${config.network}`,
+        )
+      }
+      organizationAtom = input.organization.atomId
+    } else {
+      const meta: OrganizationMeta = {
+        name: input.organization.name,
+        description: '',
+        image: '',
+        url: input.organization.url ?? '',
+        email: '',
+      }
+      organizationAtom = await ensureAtom(await pinner.pinOrganization(meta))
+    }
+    owns = await resolvePredicate(config.predicates.owns)
+    ownership = await ensureTriple(organizationAtom, owns, delegatorAtom)
+  }
+
   const relationship = await ensureTriple(delegatorAtom, delegateTo, recipientAtom)
-  const ownership = await ensureTriple(organizationAtom, owns, delegatorAtom)
   const context = await ensureTriple(delegationJsonAtom, inContextOf, relationship)
 
   return {
@@ -136,7 +166,7 @@ export async function publishDelegation(
  */
 export function inputFromStoredDelegation(
   delegation: StoredDelegation,
-  organization: OrganizationMeta,
+  organization?: OrganizationInput,
   recipient?: RecipientAtom,
 ): PublishDelegationInput {
   const agreementUri = delegation.meta.agreement?.uri

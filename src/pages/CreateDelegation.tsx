@@ -19,6 +19,8 @@ import { periodToSeconds, periodLabel, periodNoun, type PeriodType } from '../li
 import { getEnvironment } from '../lib/environment'
 import { saveDelegation, setDelegationIntuition, type StoredDelegation } from '../lib/storage'
 import { usePublishToIntuition } from '../hooks/usePublishToIntuition'
+import { OrgPicker } from '../ui/OrgPicker'
+import { orgSelectionToInput, type OrgSelection } from '../lib/orgSelection'
 import { Card, Btn, GaslessButton, USDC, Mono, CopyChip, Payee, StatusBadge } from '../ui/components'
 import { IconCube, IconLock, IconCheck, IconExt, IconHash, IconCal } from '../ui/icons'
 import { findChain, USDC_ADDRESS, rpcUrl } from '../config/supported-chains'
@@ -59,6 +61,7 @@ export default function CreateDelegation() {
   const { sdk, safe } = useSafeAppsSDK()
 
   const [payeeName, setPayeeName] = useState('')
+  const [org, setOrg] = useState<OrgSelection>(null)
   const [recipient, setRecipient] = useState('')
   const [amount, setAmount] = useState('')
   const [period, setPeriod] = useState<PeriodType>('monthly')
@@ -224,7 +227,7 @@ export default function CreateDelegation() {
         delegation: stored.delegation,
         chainId: safe.chainId,
         details: { kind: 'subscription', amount, tokenSymbol, period: periodNoun(period) },
-        organization: { name: payeeName || 'OurGlass' },
+        organization: orgSelectionToInput(org),
       })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to sign subscription')
@@ -237,6 +240,7 @@ export default function CreateDelegation() {
   function reset() {
     setSigned(null)
     setPayeeName('')
+    setOrg(null)
     setRecipient('')
     setAmount('')
     setPeriod('monthly')
@@ -308,6 +312,9 @@ export default function CreateDelegation() {
         <Card className="p-5 mt-5 space-y-5">
           <Field label="Payee name" hint="Shown in your subscriptions list. Optional.">
             <input type="text" placeholder="Acme Inc." value={payeeName} onChange={(e) => setPayeeName(e.target.value)} />
+          </Field>
+          <Field label="Organization" hint="The org that owns this Safe — reuse one from Intuition or create it. Recorded as “org owns Safe”. Optional.">
+            <OrgPicker safeAddress={safe.safeAddress as Address} safeChainId={safe.chainId} value={org} onChange={setOrg} />
           </Field>
 
           <Field label="Payee address" hint="The account allowed to charge (the delegate) and where funds are paid. Direct redeem — no relayer.">

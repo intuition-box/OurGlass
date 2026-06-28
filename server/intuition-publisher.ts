@@ -9,6 +9,7 @@ import {
   type DelegationDetails,
   type DelegationKind,
   type IntuitionNetwork,
+  type OrganizationInput,
 } from '../src/lib/intuition'
 import type { DelegationStruct } from '../src/lib/delegations'
 import { isOriginAllowed, parseAllowedOrigins } from './cors'
@@ -69,7 +70,17 @@ interface PublishBody {
   delegation: DelegationStruct
   chainId: number
   details: DelegationDetails
-  organization?: { name?: string; url?: string }
+  organization?: OrganizationInput
+}
+
+function parseOrganization(raw: unknown): OrganizationInput | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined
+  const o = raw as Record<string, unknown>
+  if (typeof o.atomId === 'string' && isHex(o.atomId)) return { atomId: o.atomId }
+  if (typeof o.name === 'string' && o.name.trim()) {
+    return { name: o.name, url: typeof o.url === 'string' ? o.url : undefined }
+  }
+  return undefined
 }
 
 function asHex(value: unknown, field: string): Hex {
@@ -111,8 +122,7 @@ function parseBody(raw: unknown): PublishBody {
     tokenSymbol: String(det.tokenSymbol ?? ''),
     period: String(det.period ?? ''),
   }
-  const org = b.organization as { name?: string; url?: string } | undefined
-  return { delegation, chainId, details, organization: org }
+  return { delegation, chainId, details, organization: parseOrganization(b.organization) }
 }
 
 async function pinToPinata(jwt: string, content: unknown, name: string): Promise<string> {
@@ -141,13 +151,7 @@ async function handlePublish(rt: Runtime, body: PublishBody): Promise<{ uri: str
     {
       delegator: { address: body.delegation.delegator, chainId: body.chainId },
       recipient: { kind: 'caip10', address: body.delegation.delegate, chainId: body.chainId },
-      organization: {
-        name: body.organization?.name ?? 'OurGlass',
-        description: '',
-        image: '',
-        url: body.organization?.url ?? '',
-        email: '',
-      },
+      organization: body.organization,
       agreementUri: uri,
     },
   )

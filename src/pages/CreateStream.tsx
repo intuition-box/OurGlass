@@ -19,6 +19,8 @@ import { readErc20Meta } from '../lib/erc20'
 import { getEnvironment } from '../lib/environment'
 import { saveDelegation, getDelegations, setDelegationIntuition, type StoredDelegation } from '../lib/storage'
 import { usePublishToIntuition } from '../hooks/usePublishToIntuition'
+import { OrgPicker } from '../ui/OrgPicker'
+import { orgSelectionToInput, type OrgSelection } from '../lib/orgSelection'
 import { Card, Btn, GaslessButton, USDC, Mono, CopyChip, Payee } from '../ui/components'
 import { IconCube, IconLock, IconCheck, IconExt, IconHash, IconCal } from '../ui/icons'
 
@@ -63,6 +65,7 @@ export default function CreateStream() {
 
   // Block 1 — Beneficiary
   const [beneficiaryName, setBeneficiaryName] = useState('')
+  const [org, setOrg] = useState<OrgSelection>(null)
   const [recipient, setRecipient] = useState('')
 
   // Block 2 — Payment details
@@ -354,7 +357,7 @@ export default function CreateStream() {
         delegation: stored.delegation,
         chainId: safe.chainId,
         details: { kind: 'stream', amount: ratePerPeriod, tokenSymbol, period: 'month' },
-        organization: { name: beneficiaryName || 'OurGlass' },
+        organization: orgSelectionToInput(org),
       })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to sign stream')
@@ -367,6 +370,7 @@ export default function CreateStream() {
   function reset() {
     setSigned(null)
     setBeneficiaryName('')
+    setOrg(null)
     setRecipient('')
     setRateAmount('')
     setRateSeconds(MONTH)
@@ -456,6 +460,9 @@ export default function CreateStream() {
               {beneficiarySuggestions.map((s) => <option key={s.value} value={s.value} label={s.label} />)}
             </datalist>
             {recipient && !recipientValid && <p className="text-xs text-danger mt-1">Invalid address</p>}
+          </Field>
+          <Field label="Organization" hint="The org that owns this Safe — reuse one from Intuition or create it. Recorded as “org owns Safe”. Optional.">
+            <OrgPicker safeAddress={safe.safeAddress as Address} safeChainId={safe.chainId} value={org} onChange={setOrg} />
           </Field>
         </Block>
 

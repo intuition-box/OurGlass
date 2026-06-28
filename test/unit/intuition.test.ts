@@ -85,7 +85,7 @@ const RECIPIENT = getAddress('0x2222222222222222222222222222222222222222')
 const input = {
   delegator: { address: DELEGATOR, chainId: 84532 },
   recipient: { kind: 'caip10' as const, address: RECIPIENT, chainId: 84532 },
-  organization: { name: 'intuition.box', description: '', image: '', url: '', email: '' },
+  organization: { name: 'intuition.box' },
   agreementUri: 'ipfs://bafyAgreement',
 }
 
@@ -208,6 +208,32 @@ describe('publishDelegation', () => {
     expect(second.atoms).toEqual(first.atoms)
   })
 
+  test('omits the ownership edge when no organization is given', async () => {
+    const { chain } = makeFakeChain(reusedPredicates)
+    const result = await publishDelegation(
+      { chain, pinner: makeFakePinner(), config: testnet },
+      { ...input, organization: undefined },
+    )
+    expect(result.predicates.owns).toBeNull()
+    expect(result.atoms.organization).toBeNull()
+    expect(result.triples.ownership).toBeNull()
+    // The delegation + relationship + context still publish.
+    expect(result.triples.relationship).toBeTruthy()
+    expect(result.triples.context).toBeTruthy()
+  })
+
+  test('reuses an existing organization atom by id (no new org atom)', async () => {
+    const orgAtom = `0x${'ab'.repeat(32)}` as Hex
+    const { chain, createdAtoms } = makeFakeChain([...reusedPredicates, orgAtom])
+    const result = await publishDelegation(
+      { chain, pinner: makeFakePinner(), config: testnet },
+      { ...input, organization: { atomId: orgAtom } },
+    )
+    expect(result.atoms.organization).toBe(orgAtom)
+    expect(result.triples.ownership).toBeTruthy()
+    expect(createdAtoms).not.toContain(orgAtom) // reused, not created
+  })
+
   test('throws when a configured reuse predicate is missing on-chain', async () => {
     const { chain } = makeFakeChain([]) // do not seed the reused predicates
     await expect(
@@ -251,13 +277,7 @@ describe('inputFromStoredDelegation', () => {
   }
 
   test('derives delegator/recipient/agreement from a stored delegation', () => {
-    const out = inputFromStoredDelegation(base, {
-      name: 'Acme',
-      description: '',
-      image: '',
-      url: '',
-      email: '',
-    })
+    const out = inputFromStoredDelegation(base, { name: 'Acme' })
     expect(out.delegator).toEqual({ address: DELEGATOR, chainId: 84532 })
     expect(out.recipient).toEqual({ kind: 'caip10', address: RECIPIENT, chainId: 84532 })
     expect(out.agreementUri).toBe('ipfs://bafy')
@@ -265,14 +285,6 @@ describe('inputFromStoredDelegation', () => {
 
   test('throws without a pinned agreement URI', () => {
     const noAgreement: StoredDelegation = { ...base, meta: { ...base.meta, agreement: undefined } }
-    expect(() =>
-      inputFromStoredDelegation(noAgreement, {
-        name: 'Acme',
-        description: '',
-        image: '',
-        url: '',
-        email: '',
-      }),
-    ).toThrow(/agreement/)
+    expect(() => inputFromStoredDelegation(noAgreement, { name: 'Acme' })).toThrow(/agreement/)
   })
 })

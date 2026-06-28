@@ -34,4 +34,10 @@ export {
   type PublishDeps,
   type PublishDelegationInput,
   type PublishResult,
+  type OrganizationInput,
 } from './publish'
+export {
+  searchOrganizations,
+  findOwningOrganization,
+  type OrgAtom,
+} from './organizations'

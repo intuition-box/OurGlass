@@ -1,6 +1,6 @@
 import type { Hex } from 'viem'
 import type { DelegationStruct } from './delegations'
-import type { DelegationDetails, IntuitionNetwork } from './intuition'
+import type { DelegationDetails, IntuitionNetwork, OrganizationInput } from './intuition'
 
 /**
  * Client for the Intuition publisher backend. The browser cannot hold the
@@ -13,7 +13,7 @@ export interface PublishRequest {
   delegation: DelegationStruct
   chainId: number
   details: DelegationDetails
-  organization?: { name: string; url?: string }
+  organization?: OrganizationInput
 }
 
 export interface PublishResponse {
