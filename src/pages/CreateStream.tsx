@@ -18,6 +18,7 @@ import { MAX_UINT256, perSecondForTotal } from '../lib/streamRate'
 import { readErc20Meta } from '../lib/erc20'
 import { getEnvironment } from '../lib/environment'
 import { saveDelegation, getDelegations, type StoredDelegation } from '../lib/storage'
+import { usePublishToIntuition } from '../hooks/usePublishToIntuition'
 import { Card, Btn, GaslessButton, USDC, Mono, CopyChip, Payee } from '../ui/components'
 import { IconCube, IconLock, IconCheck, IconExt, IconHash, IconCal } from '../ui/icons'
 
@@ -92,6 +93,9 @@ export default function CreateStream() {
   const [touchedBene, setTouchedBene] = useState(false)
   const [touchedRate, setTouchedRate] = useState(false)
   const [touchedCap, setTouchedCap] = useState(false)
+
+  const { publish: publishToIntuition, status: intuitionStatus, enabled: intuitionEnabled } =
+    usePublishToIntuition()
 
   const defaultUsdc = USDC_ADDRESS[safe.chainId]
   const tokenAddress = useCustomToken ? customToken : defaultUsdc
@@ -332,6 +336,15 @@ export default function CreateStream() {
       }
       saveDelegation(stored)
       setSigned(stored)
+
+      // Record the signed stream on the Intuition graph (fire-and-forget via the
+      // publisher backend — failures never block the create flow).
+      publishToIntuition({
+        delegation: stored.delegation,
+        chainId: safe.chainId,
+        details: { kind: 'stream', amount: ratePerPeriod, tokenSymbol, period: 'month' },
+        organization: { name: beneficiaryName || 'OurGlass' },
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to sign stream')
     } finally {
@@ -386,6 +399,16 @@ export default function CreateStream() {
             <Row label="Pay rate"><span className="font-mono font-semibold text-ink">{signed.meta.ratePerPeriod} USDC / month</span></Row>
             <Row label="Total"><span className="font-mono text-ink">{unbounded ? 'Unlimited' : `${trimAmount(formatUnits(BigInt(signed.meta.maxAmount ?? '0'), decimals))} USDC`}</span></Row>
             <Row label="Contract hash"><Mono className="text-xs text-dim">{short(signed.meta.agreement!.termsHash)}</Mono></Row>
+            {intuitionEnabled && (
+              <Row label="Intuition">
+                <Mono className="text-xs text-dim">
+                  {intuitionStatus.state === 'publishing' && 'recording on graph…'}
+                  {intuitionStatus.state === 'done' && 'recorded on graph'}
+                  {intuitionStatus.state === 'error' && `not recorded — ${intuitionStatus.message}`}
+                  {intuitionStatus.state === 'idle' && '—'}
+                </Mono>
+              </Row>
+            )}
           </div>
 
           <div className="mt-5 flex flex-wrap gap-2">
