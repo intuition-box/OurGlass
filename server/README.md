@@ -37,7 +37,7 @@ attestor nonce.
 | `INTUITION_ATTESTOR_PK` | yes | — | Funded attestor key. **Server-side only.** |
 | `PINATA_JWT` | yes | — | Pins the DelegationJson document (server-side; no `VITE_`). |
 | `INTUITION_NETWORK` | no | `testnet` | `testnet` (13579) or `mainnet` (1155). |
-| `PORT` | no | `8787` | |
+| `INTUITION_PUBLISHER_PORT` | no | `8787` | Own var; a platform-injected `PORT` would otherwise repoint the listener. |
 | `ALLOWED_ORIGIN` | no | apex + `*.ourglass.intuition.box` + localhost | Comma-separated; supports `*` and subdomain wildcards. Default accepts every PR preview subdomain. |
 | `PUBLISH_SECRET` | no | — | If set, require `x-publish-secret` to match. |
 

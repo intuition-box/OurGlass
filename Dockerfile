@@ -74,6 +74,8 @@ COPY server/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 ENV INTUITION_NETWORK=testnet
-ENV PORT=8787
+# The publisher's internal port. NOT `PORT` — platforms (Coolify) inject PORT for
+# the main listener (Caddy on :80); reusing it makes the publisher try to bind :80.
+ENV INTUITION_PUBLISHER_PORT=8787
 EXPOSE 80
 CMD ["/entrypoint.sh"]

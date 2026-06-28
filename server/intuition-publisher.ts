@@ -27,7 +27,9 @@ import { isOriginAllowed, parseAllowedOrigins } from './cors'
 const pk = process.env.INTUITION_ATTESTOR_PK
 const pinataJwt = process.env.PINATA_JWT
 const network = (process.env.INTUITION_NETWORK ?? 'testnet') as IntuitionNetwork
-const port = Number(process.env.PORT ?? '8787')
+// Own port var — platforms (Coolify, etc.) inject PORT for the main listener
+// (Caddy on :80 here); the publisher is internal, proxied at /intuition.
+const port = Number(process.env.INTUITION_PUBLISHER_PORT ?? '8787')
 const publishSecret = process.env.PUBLISH_SECRET
 
 // The matched request origin is echoed back (never a bare `*`), so PR preview

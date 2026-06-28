@@ -11,6 +11,7 @@ RUN bun install
 
 COPY . .
 
-ENV PORT=8787
+# Own port var so a platform-injected PORT doesn't repoint the listener.
+ENV INTUITION_PUBLISHER_PORT=8787
 EXPOSE 8787
 CMD ["bun", "server/intuition-publisher.ts"]
