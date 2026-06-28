@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useSafeAppsSDK } from '@safe-global/safe-apps-react-sdk'
 import { createPublicClient, http, isAddress, parseUnits, type Address, type Hex } from 'viem'
 import { createDelegation } from '@metamask/smart-accounts-kit'
@@ -15,9 +15,12 @@ import {
   type AgreementDocument,
   type PinResult,
 } from '../lib/subscriptionTerms'
-import { periodToSeconds, periodLabel, type PeriodType } from '../lib/enforcers'
+import { periodToSeconds, periodLabel, periodNoun, type PeriodType } from '../lib/enforcers'
 import { getEnvironment } from '../lib/environment'
-import { saveDelegation, type StoredDelegation } from '../lib/storage'
+import { saveDelegation, setDelegationIntuition, type StoredDelegation } from '../lib/storage'
+import { usePublishToIntuition } from '../hooks/usePublishToIntuition'
+import { OrgPicker } from '../ui/OrgPicker'
+import { orgSelectionToInput, type OrgSelection } from '../lib/orgSelection'
 import { Card, Btn, GaslessButton, USDC, Mono, CopyChip, Payee, StatusBadge } from '../ui/components'
 import { IconCube, IconLock, IconCheck, IconExt, IconHash, IconCal } from '../ui/icons'
 import { findChain, USDC_ADDRESS, rpcUrl } from '../config/supported-chains'
@@ -58,6 +61,7 @@ export default function CreateDelegation() {
   const { sdk, safe } = useSafeAppsSDK()
 
   const [payeeName, setPayeeName] = useState('')
+  const [org, setOrg] = useState<OrgSelection>(null)
   const [recipient, setRecipient] = useState('')
   const [amount, setAmount] = useState('')
   const [period, setPeriod] = useState<PeriodType>('monthly')
@@ -72,6 +76,20 @@ export default function CreateDelegation() {
   const [pinnedCid, setPinnedCid] = useState<string | null>(null)
   const [signed, setSigned] = useState<StoredDelegation | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  const { publish: publishToIntuition, status: intuitionStatus, enabled: intuitionEnabled } =
+    usePublishToIntuition()
+
+  // Persist the published DelegationJson atom so the overview can deep-link to the
+  // Intuition portal instead of the (possibly offline) IPFS link.
+  useEffect(() => {
+    if (signed && intuitionStatus.state === 'done' && intuitionStatus.atomId && intuitionStatus.network) {
+      setDelegationIntuition(signed.meta.delegationHash, {
+        atomId: intuitionStatus.atomId,
+        network: intuitionStatus.network,
+      })
+    }
+  }, [signed, intuitionStatus])
 
   const defaultUsdc = USDC_ADDRESS[safe.chainId]
   const tokenAddress = useCustomToken ? customToken : defaultUsdc
@@ -202,6 +220,15 @@ export default function CreateDelegation() {
       }
       saveDelegation(stored)
       setSigned(stored)
+
+      // Record the signed delegation on the Intuition graph (fire-and-forget via
+      // the publisher backend — failures never block the create flow).
+      publishToIntuition({
+        delegation: stored.delegation,
+        chainId: safe.chainId,
+        details: { kind: 'subscription', amount, tokenSymbol, period: periodNoun(period) },
+        organization: orgSelectionToInput(org),
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to sign subscription')
     } finally {
@@ -213,6 +240,7 @@ export default function CreateDelegation() {
   function reset() {
     setSigned(null)
     setPayeeName('')
+    setOrg(null)
     setRecipient('')
     setAmount('')
     setPeriod('monthly')
@@ -243,6 +271,15 @@ export default function CreateDelegation() {
             <Row label="Charge"><span className="font-mono font-semibold text-ink">{signed.meta.amount} {signed.meta.tokenAddress ? 'USDC' : ''} / {signed.meta.period}</span></Row>
             <Row label="Contract hash"><Mono className="text-xs text-dim">{short(signed.meta.agreement!.termsHash)}</Mono></Row>
             <Row label="Delegation hash"><Mono className="text-xs text-dim">{short(signed.meta.delegationHash)}</Mono></Row>
+            <Row label="Intuition">
+              <Mono className="text-xs text-dim">
+                {!intuitionEnabled && 'publishing not configured'}
+                {intuitionEnabled && intuitionStatus.state === 'publishing' && 'recording on graph…'}
+                {intuitionEnabled && intuitionStatus.state === 'done' && 'recorded on graph'}
+                {intuitionEnabled && intuitionStatus.state === 'error' && `not recorded — ${intuitionStatus.message}`}
+                {intuitionEnabled && intuitionStatus.state === 'idle' && '—'}
+              </Mono>
+            </Row>
           </div>
 
           <div className="mt-5 flex flex-wrap gap-2">
@@ -275,6 +312,9 @@ export default function CreateDelegation() {
         <Card className="p-5 mt-5 space-y-5">
           <Field label="Payee name" hint="Shown in your subscriptions list. Optional.">
             <input type="text" placeholder="Acme Inc." value={payeeName} onChange={(e) => setPayeeName(e.target.value)} />
+          </Field>
+          <Field label="Organization" hint="The org that owns this Safe — reuse one from Intuition or create it. Recorded as “org owns Safe”. Optional.">
+            <OrgPicker safeAddress={safe.safeAddress as Address} safeChainId={safe.chainId} value={org} onChange={setOrg} />
           </Field>
 
           <Field label="Payee address" hint="The account allowed to charge (the delegate) and where funds are paid. Direct redeem — no relayer.">

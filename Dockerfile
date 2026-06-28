@@ -8,10 +8,22 @@ RUN bun install
 
 COPY . .
 
-# Vite inlines VITE_* at build time, so the value must be present NOW.
-# In Coolify set this as a Build-time variable / build arg.
+# Vite inlines VITE_* at build time, so the values must be present NOW.
+# In Coolify set these as Build-time variables / build args — define them at the
+# project level so every deployment, including each PR preview, inherits them.
 ARG VITE_PINATA_JWT
 ENV VITE_PINATA_JWT=$VITE_PINATA_JWT
+# URL of the Intuition publisher. Defaults to the same-origin path served by this
+# same container (Caddy reverse-proxies /intuition/* -> the in-container publisher),
+# so it works on every preview + prod with no per-env config. Override only to
+# point at an external publisher service.
+ARG VITE_INTUITION_PUBLISHER_URL=/intuition
+ENV VITE_INTUITION_PUBLISHER_URL=$VITE_INTUITION_PUBLISHER_URL
+ARG VITE_INTUITION_PUBLISHER_SECRET
+ENV VITE_INTUITION_PUBLISHER_SECRET=$VITE_INTUITION_PUBLISHER_SECRET
+# Which Intuition network the Charge page reads (testnet preview / mainnet prod).
+ARG VITE_INTUITION_NETWORK=testnet
+ENV VITE_INTUITION_NETWORK=$VITE_INTUITION_NETWORK
 RUN bun run build
 # -> /app/dist (asset URLs prefixed with /safe-app/)
 
@@ -25,13 +37,45 @@ COPY website/package.json website/package-lock.json ./
 RUN npm ci --ignore-scripts
 
 COPY website/ ./
+# Next inlines NEXT_PUBLIC_* at build time. Which Intuition network the /redeem
+# page queries: testnet on previews, mainnet on prod. Set as a Coolify build var.
+ARG NEXT_PUBLIC_INTUITION_NETWORK=testnet
+ENV NEXT_PUBLIC_INTUITION_NETWORK=$NEXT_PUBLIC_INTUITION_NETWORK
 RUN npm run build
 # -> /site/out
 
 # ---- Serve stage ----
-FROM caddy:2-alpine
-COPY Caddyfile /etc/caddy/Caddyfile
-# Website at the root; the Safe App SPA under /safe-app.
+# Caddy serves the static apps AND reverse-proxies /intuition/* to the Intuition
+# publisher (a bun process) running in this same container. One deploy, one origin,
+# no CORS. The publisher holds INTUITION_ATTESTOR_PK + PINATA_JWT as RUNTIME env
+# (never VITE_ — those are baked into the public bundle). If the publisher can't
+# start (e.g. missing key), Caddy still serves the site; auto-publish just degrades.
+FROM caddy:2 AS caddybin
+
+FROM oven/bun:1
+# Caddy is a static binary — drop it into the bun image. Give it writable storage
+# dirs (it serves :80 only; Coolify terminates TLS, so no certs are managed here).
+COPY --from=caddybin /usr/bin/caddy /usr/bin/caddy
+ENV XDG_DATA_HOME=/data XDG_CONFIG_HOME=/config
+RUN mkdir -p /data /config
+
+# Static apps: website at the root, Safe App SPA under /safe-app.
 COPY --from=site /site/out /srv
 COPY --from=app /app/dist /srv/safe-app
+
+# The publisher app (source + deps) to run with bun.
+COPY --from=app /app/node_modules /publisher/node_modules
+COPY --from=app /app/package.json /publisher/package.json
+COPY --from=app /app/src /publisher/src
+COPY --from=app /app/server /publisher/server
+
+COPY Caddyfile /etc/caddy/Caddyfile
+COPY server/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENV INTUITION_NETWORK=testnet
+# The publisher's internal port. NOT `PORT` — platforms (Coolify) inject PORT for
+# the main listener (Caddy on :80); reusing it makes the publisher try to bind :80.
+ENV INTUITION_PUBLISHER_PORT=8787
 EXPOSE 80
+CMD ["/entrypoint.sh"]

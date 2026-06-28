@@ -29,6 +29,14 @@
 	@revalidate not path /safe-app/assets/* /_next/*
 	header @revalidate Cache-Control "no-cache"
 
+	# Intuition publisher: a bun process in this same container. Same-origin, so the
+	# Safe App POSTs here with no CORS / no separate domain. handle_path strips the
+	# prefix: /intuition/publish -> the publisher's /publish, /intuition/health ->
+	# /health. If the publisher is down, this returns 502 and auto-publish degrades.
+	handle_path /intuition/* {
+		reverse_proxy localhost:8787
+	}
+
 	# The Vite Safe App SPA. handle_path strips the /safe-app prefix; the app was
 	# built with base=/safe-app/ so its asset URLs resolve correctly. Unknown
 	# sub-paths fall back to the SPA's index.html for client-side routing.

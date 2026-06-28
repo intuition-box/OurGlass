@@ -2,8 +2,9 @@
 
 import { useMemo, useRef, useState } from 'react'
 import { createPublicClient, http, isAddress, erc20Abi, formatUnits, type Address, type PublicClient, type WalletClient } from 'viem'
-import { useAccount, useWalletClient } from 'wagmi'
+import { useAccount, useWalletClient, useConnect } from 'wagmi'
 import { importDelegationsJson, type StoredDelegation } from './lib/storage'
+import { useIncomingDelegations } from './hooks/useIncomingDelegations'
 import { ipfsToHttp } from './lib/subscriptionTerms'
 import { redeemSubscriptionDirect } from './lib/redeemDirect'
 import { streamedAvailable } from './lib/streamTerms'
@@ -27,6 +28,7 @@ const tintFor = (addr: string) => {
 
 export function StandaloneRedeem() {
   const [chainId, setChainId] = useState(84532)
+  const [mode, setMode] = useState<'auto' | 'manual'>('auto')
   const [jsonInput, setJsonInput] = useState('')
   const [sub, setSub] = useState<StoredDelegation | null>(null)
   const [recipient, setRecipient] = useState('')
@@ -45,6 +47,21 @@ export function StandaloneRedeem() {
 
   const { address, isConnected, chainId: walletChainId } = useAccount()
   const { data: walletClient } = useWalletClient()
+  const { connect, connectors } = useConnect()
+  const incoming = useIncomingDelegations()
+
+  function connectWallet() {
+    const connector = connectors[0]
+    if (connector) connect({ connector })
+  }
+
+  function selectDelegation(d: StoredDelegation) {
+    setError(null)
+    setTxHash(null)
+    setSub(d)
+    setRecipient(d.meta.recipient ?? '')
+    if (SELECTABLE_CHAINS.some((c) => c.id === d.meta.chainId)) setChainId(d.meta.chainId)
+  }
 
   // chainId always comes from the selector (a SELECTABLE_CHAINS id), so it resolves.
   const chain = useMemo(() => findChain(chainId)!, [chainId])
@@ -179,29 +196,69 @@ export function StandaloneRedeem() {
         ) : !sub ? (
           <div className="max-w-xl mx-auto">
             <h1 className="text-2xl font-extrabold tracking-tight text-ink">Charge a subscription</h1>
-            <p className="text-dim text-sm mt-1">Load a signed subscription and bill this period. The payee redeems on-chain — gas in ETH, capped by the caveat.</p>
+            <p className="text-dim text-sm mt-1">Delegations made to your connected wallet, discovered on Intuition. Pick one to bill this period — or import a signed delegation manually.</p>
 
-            <Card className="p-6 mt-5 space-y-5">
-              <div
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f) }}
-                onClick={() => fileRef.current?.click()}
-                className="rounded-2xl p-8 text-center cursor-pointer transition-colors"
-                style={{ boxShadow: 'inset 0 0 0 1.5px var(--color-line)' }}
-              >
-                <div className="grid place-items-center w-11 h-11 rounded-2xl glass-soft ring-1 ring-line mx-auto text-faint"><IconDoc size={20} /></div>
-                <p className="text-sm text-dim mt-3">Drop the subscription JSON or <span style={{ color: 'var(--accent)' }}>click to browse</span></p>
-                <input ref={fileRef} type="file" accept=".json" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
+            {mode === 'auto' ? (
+              <div className="mt-5 space-y-3">
+                {!isConnected ? (
+                  <Card className="p-6 text-center">
+                    <p className="text-sm text-dim">Connect your wallet to see the delegations made to you.</p>
+                    <div className="mt-4"><Btn onClick={connectWallet}>Connect wallet</Btn></div>
+                  </Card>
+                ) : incoming.loading ? (
+                  <Card className="p-6 text-center"><p className="text-sm text-faint">Reading delegations from Intuition…</p></Card>
+                ) : incoming.error ? (
+                  <Card className="p-6 text-center">
+                    <p className="text-sm text-dim">Couldn’t read delegations from Intuition.</p>
+                    <div className="mt-4"><Btn kind="secondary" onClick={incoming.refetch}>Retry</Btn></div>
+                  </Card>
+                ) : incoming.delegations.length > 0 ? (
+                  incoming.delegations.map((d) => (
+                    <button key={d.meta.delegationHash} onClick={() => selectDelegation(d)} className="w-full text-left">
+                      <Card className="p-4 flex items-center justify-between gap-4 hover:bg-[#212B43] transition">
+                        <Payee logo={d.delegation.delegator.slice(2, 4).toUpperCase()} tint={tintFor(d.delegation.delegator)} name={d.meta.label} addr={`from ${short(d.delegation.delegator)}`} />
+                        <span className="font-mono font-semibold text-ink whitespace-nowrap">{d.meta.amount} <span className="text-dim text-sm">USDC / {d.meta.period}</span></span>
+                      </Card>
+                    </button>
+                  ))
+                ) : (
+                  <Card className="p-6 text-center">
+                    <p className="text-sm text-dim">No active delegations found for <Mono className="text-dim">{short(address!)}</Mono>.</p>
+                    <p className="text-xs text-faint mt-1">They appear here once a delegation to this wallet is recorded on Intuition. Check that you are connected to the right network.</p>
+                  </Card>
+                )}
+                <div className="text-center pt-1">
+                  <button onClick={() => setMode('manual')} className="text-xs text-faint hover:text-dim transition">Import a delegation manually</button>
+                </div>
               </div>
-              <div>
-                <label htmlFor="redeem-json" className="text-sm font-medium text-ink block mb-1.5">Or paste JSON</label>
-                <textarea id="redeem-json" value={jsonInput} onChange={(e) => setJsonInput(e.target.value)} rows={6} placeholder='{"delegation": {…}, "meta": {…}}' className="font-mono text-xs" />
-                <div className="mt-2"><Btn kind="secondary" onClick={() => parse(jsonInput)} disabled={!jsonInput.trim()}>Load subscription</Btn></div>
+            ) : (
+              <div className="mt-5 space-y-3">
+                <Card className="p-6 space-y-5">
+                  <div
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f) }}
+                    onClick={() => fileRef.current?.click()}
+                    className="rounded-2xl p-8 text-center cursor-pointer transition-colors"
+                    style={{ boxShadow: 'inset 0 0 0 1.5px var(--color-line)' }}
+                  >
+                    <div className="grid place-items-center w-11 h-11 rounded-2xl glass-soft ring-1 ring-line mx-auto text-faint"><IconDoc size={20} /></div>
+                    <p className="text-sm text-dim mt-3">Drop the subscription JSON or <span style={{ color: 'var(--accent)' }}>click to browse</span></p>
+                    <input ref={fileRef} type="file" accept=".json" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
+                  </div>
+                  <div>
+                    <label htmlFor="redeem-json" className="text-sm font-medium text-ink block mb-1.5">Or paste JSON</label>
+                    <textarea id="redeem-json" value={jsonInput} onChange={(e) => setJsonInput(e.target.value)} rows={6} placeholder='{"delegation": {…}, "meta": {…}}' className="font-mono text-xs" />
+                    <div className="mt-2"><Btn kind="secondary" onClick={() => parse(jsonInput)} disabled={!jsonInput.trim()}>Load subscription</Btn></div>
+                  </div>
+                  {error && (
+                    <div className="rounded-xl px-3 py-2 text-sm text-danger flex items-center gap-2" style={{ background: 'rgba(251,113,133,.10)', boxShadow: 'inset 0 0 0 1px rgba(251,113,133,.30)' }}><IconAlert size={15} /> {error}</div>
+                  )}
+                </Card>
+                <div className="text-center pt-1">
+                  <button onClick={() => setMode('auto')} className="text-xs text-faint hover:text-dim transition">Back to my delegations</button>
+                </div>
               </div>
-              {error && (
-                <div className="rounded-xl px-3 py-2 text-sm text-danger flex items-center gap-2" style={{ background: 'rgba(251,113,133,.10)', boxShadow: 'inset 0 0 0 1px rgba(251,113,133,.30)' }}><IconAlert size={15} /> {error}</div>
-              )}
-            </Card>
+            )}
           </div>
         ) : (
           <div className="max-w-xl mx-auto">

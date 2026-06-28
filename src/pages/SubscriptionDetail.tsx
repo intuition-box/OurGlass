@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useSafeAppsSDK } from '@safe-global/safe-apps-react-sdk'
 import { ipfsToHttp } from '../lib/subscriptionTerms'
+import { portalAtomUrl } from '../lib/intuition'
 import { buildRevokeTxs } from '../lib/revoke'
 import { updateDelegationStatus, removeDelegation, type StoredDelegation } from '../lib/storage'
 import { Card, Btn, StatusBadge, Payee, Mono, CopyChip, type Status } from '../ui/components'
@@ -46,6 +47,11 @@ export function SubscriptionDetail({
     d.meta.agreement && !d.meta.agreement.uri.startsWith('ipfs://local-')
       ? ipfsToHttp(d.meta.agreement.uri)
       : undefined
+  // Prefer the Intuition portal (the DelegationJson atom) once published.
+  const intuitionUrl = d.meta.intuition
+    ? portalAtomUrl(d.meta.intuition.atomId, d.meta.intuition.network)
+    : undefined
+  const agreementUrl = intuitionUrl ?? httpUri
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -153,15 +159,15 @@ export function SubscriptionDetail({
           </Row>
           {d.meta.agreement && (
             <Row label="Agreement">
-              {httpUri ? (
+              {agreementUrl ? (
                 <a
-                  href={httpUri}
+                  href={agreementUrl}
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex items-center gap-1.5 font-mono text-xs text-[color:var(--accent)] hover:underline break-all"
                 >
                   <IconCube size={12} />
-                  {d.meta.agreement.cid.slice(0, 18)}…
+                  {intuitionUrl ? 'View on Intuition' : `${d.meta.agreement.cid.slice(0, 18)}…`}
                   <IconExt size={10} className="opacity-60" />
                 </a>
               ) : (

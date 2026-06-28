@@ -76,10 +76,9 @@ Funds never leave the Safe in advance. The delegation grants a capability, not a
 |---|---|---|
 | Overview | `/` (in Safe) | Module status, committed monthly total, your subscriptions at a glance — open one to inspect the pinned IPFS contract or revoke it |
 | Subscribe | in-app tab | Create and sign a new agreement, with a live preview of the contract being signed |
-| Charge | in-app tab | For payee Safes: charge a subscription where this Safe is the delegate |
+| Charge | in-app tab | For payee Safes: lists the active delegations made to this Safe (discovered on Intuition); import one manually as a fallback; charges on-chain |
 | Withdraw | in-app tab | Sweep any assets sitting on the DeleGator module back to the Safe |
-| Import | in-app tab | Import a subscription JSON shared by the counterparty |
-| Charge console | `/redeem` | Standalone page for payees outside Safe — load a subscription JSON, connect a browser wallet (MetaMask), charge on-chain |
+| Charge console | `/redeem` | Standalone page for payees outside Safe — auto-lists delegations made to a connected browser wallet (discovered on Intuition), with manual JSON import as a fallback; charges on-chain |
 
 Both sides of an agreement are first-class: the paying Safe manages and revokes from inside Safe; the payee charges either from its own Safe or from the standalone console with a plain wallet.
 
@@ -100,8 +99,9 @@ The `DelegationManager` (`0xdb9B1e94B5b69Df7e401DDbedE43491141047dB3`) and the c
 - **[@safe-global/safe-apps-react-sdk](https://www.npmjs.com/package/@safe-global/safe-apps-react-sdk)** — Safe App integration
 - **[wagmi](https://wagmi.sh/) + [viem](https://viem.sh/)** — wallet connection and on-chain calls
 - **Pinata** — IPFS pinning of agreement documents
+- **[Intuition](https://www.intuition.systems/)** — the knowledge graph signed delegations are published to (via a small [publisher service](server/README.md)) so receivers can discover them
 
-Signed agreements are stored client-side (`localStorage`) and exchanged between parties as JSON files. Nothing sensitive ever leaves the browser.
+Signed agreements are stored client-side and can be exchanged directly as JSON files. They are also published to the Intuition graph so the receiver can discover them automatically — a **convenience layer, not a dependency**. The source of truth stays on-chain (the EIP-712 signature + the `DelegationManager`); both sides keep creating, signing, and charging even if the publisher or Intuition is down (manual import remains). See the [Discovery](https://ourglass.intuition.box/docs/concepts/discovery) docs.
 
 ## Getting started
 

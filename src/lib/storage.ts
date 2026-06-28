@@ -25,6 +25,9 @@ export interface StoredDelegation {
     delegationHash: Hex
     // Subscription contract pinned to IPFS, hash bound to the signature salt
     agreement?: { cid: string; uri: string; termsHash: Hex }
+    // Set once the delegation is recorded on Intuition — the DelegationJson atom,
+    // used to deep-link to the Intuition portal. Absent until/unless published.
+    intuition?: { atomId: Hex; network: 'testnet' | 'mainnet' }
     // Human-readable details
     amount?: string
     period?: string
@@ -95,6 +98,20 @@ export function updateDelegationStatus(
   const updated = existing.map((d) =>
     d.meta.delegationHash === delegationHash
       ? { ...d, meta: { ...d.meta, status } }
+      : d
+  )
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(updated))
+}
+
+/** Record the Intuition DelegationJson atom once a delegation is published. */
+export function setDelegationIntuition(
+  delegationHash: Hex,
+  intuition: NonNullable<StoredDelegation['meta']['intuition']>
+): void {
+  const existing = getDelegations()
+  const updated = existing.map((d) =>
+    d.meta.delegationHash === delegationHash
+      ? { ...d, meta: { ...d.meta, intuition } }
       : d
   )
   localStorage.setItem(STORAGE_KEY, JSON.stringify(updated))

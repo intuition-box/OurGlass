@@ -17,7 +17,10 @@ import {
 import { MAX_UINT256, perSecondForTotal } from '../lib/streamRate'
 import { readErc20Meta } from '../lib/erc20'
 import { getEnvironment } from '../lib/environment'
-import { saveDelegation, getDelegations, type StoredDelegation } from '../lib/storage'
+import { saveDelegation, getDelegations, setDelegationIntuition, type StoredDelegation } from '../lib/storage'
+import { usePublishToIntuition } from '../hooks/usePublishToIntuition'
+import { OrgPicker } from '../ui/OrgPicker'
+import { orgSelectionToInput, type OrgSelection } from '../lib/orgSelection'
 import { Card, Btn, GaslessButton, USDC, Mono, CopyChip, Payee } from '../ui/components'
 import { IconCube, IconLock, IconCheck, IconExt, IconHash, IconCal } from '../ui/icons'
 
@@ -62,6 +65,7 @@ export default function CreateStream() {
 
   // Block 1 — Beneficiary
   const [beneficiaryName, setBeneficiaryName] = useState('')
+  const [org, setOrg] = useState<OrgSelection>(null)
   const [recipient, setRecipient] = useState('')
 
   // Block 2 — Payment details
@@ -92,6 +96,20 @@ export default function CreateStream() {
   const [touchedBene, setTouchedBene] = useState(false)
   const [touchedRate, setTouchedRate] = useState(false)
   const [touchedCap, setTouchedCap] = useState(false)
+
+  const { publish: publishToIntuition, status: intuitionStatus, enabled: intuitionEnabled } =
+    usePublishToIntuition()
+
+  // Persist the published DelegationJson atom so the overview can deep-link to the
+  // Intuition portal instead of the (possibly offline) IPFS link.
+  useEffect(() => {
+    if (signed && intuitionStatus.state === 'done' && intuitionStatus.atomId && intuitionStatus.network) {
+      setDelegationIntuition(signed.meta.delegationHash, {
+        atomId: intuitionStatus.atomId,
+        network: intuitionStatus.network,
+      })
+    }
+  }, [signed, intuitionStatus])
 
   const defaultUsdc = USDC_ADDRESS[safe.chainId]
   const tokenAddress = useCustomToken ? customToken : defaultUsdc
@@ -332,6 +350,15 @@ export default function CreateStream() {
       }
       saveDelegation(stored)
       setSigned(stored)
+
+      // Record the signed stream on the Intuition graph (fire-and-forget via the
+      // publisher backend — failures never block the create flow).
+      publishToIntuition({
+        delegation: stored.delegation,
+        chainId: safe.chainId,
+        details: { kind: 'stream', amount: ratePerPeriod, tokenSymbol, period: 'month' },
+        organization: orgSelectionToInput(org),
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to sign stream')
     } finally {
@@ -343,6 +370,7 @@ export default function CreateStream() {
   function reset() {
     setSigned(null)
     setBeneficiaryName('')
+    setOrg(null)
     setRecipient('')
     setRateAmount('')
     setRateSeconds(MONTH)
@@ -386,6 +414,15 @@ export default function CreateStream() {
             <Row label="Pay rate"><span className="font-mono font-semibold text-ink">{signed.meta.ratePerPeriod} USDC / month</span></Row>
             <Row label="Total"><span className="font-mono text-ink">{unbounded ? 'Unlimited' : `${trimAmount(formatUnits(BigInt(signed.meta.maxAmount ?? '0'), decimals))} USDC`}</span></Row>
             <Row label="Contract hash"><Mono className="text-xs text-dim">{short(signed.meta.agreement!.termsHash)}</Mono></Row>
+            <Row label="Intuition">
+              <Mono className="text-xs text-dim">
+                {!intuitionEnabled && 'publishing not configured'}
+                {intuitionEnabled && intuitionStatus.state === 'publishing' && 'recording on graph…'}
+                {intuitionEnabled && intuitionStatus.state === 'done' && 'recorded on graph'}
+                {intuitionEnabled && intuitionStatus.state === 'error' && `not recorded — ${intuitionStatus.message}`}
+                {intuitionEnabled && intuitionStatus.state === 'idle' && '—'}
+              </Mono>
+            </Row>
           </div>
 
           <div className="mt-5 flex flex-wrap gap-2">
@@ -411,6 +448,13 @@ export default function CreateStream() {
             {error}
           </div>
         )}
+
+        {/* Block 0 — Sender (this Safe and the org that owns it) */}
+        <Block title="Sender">
+          <Field label="Organization" hint="The org that owns this Safe — reuse one from Intuition or create it. Recorded as “org owns Safe”. Optional.">
+            <OrgPicker safeAddress={safe.safeAddress as Address} safeChainId={safe.chainId} value={org} onChange={setOrg} />
+          </Field>
+        </Block>
 
         {/* Block 1 — Beneficiary */}
         <Block title="Beneficiary">

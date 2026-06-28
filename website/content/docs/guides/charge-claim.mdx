@@ -6,6 +6,15 @@ description: How the receiver pulls what an agreement allows.
 The receiver redeems the delegation against the `DelegationManager`; the caveat
 caps the pull.
 
+## Finding what you can charge
+
+The Charge page (Safe App) and the redeem console list the active delegations made
+to your connected account, [discovered on Intuition](/docs/concepts/discovery) and
+confirmed enabled on-chain. If the index is unavailable — or for a delegation that
+was never published — use **"manually import a delegation"** to paste or drop the
+signed JSON. Either way the on-chain redeem below is identical; discovery only
+decides which delegations are shown.
+
 ## Subscriptions — charge per period
 
 The receiver pulls up to `periodAmount` once the period allows it. A second pull
