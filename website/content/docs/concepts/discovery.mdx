@@ -1,0 +1,85 @@
+---
+title: Discovery
+description: How OurGlass finds delegations on Intuition — and why that service is a convenience, never a dependency.
+---
+
+OurGlass records each signed delegation on the **Intuition** knowledge graph so
+the people in an agreement can *find* it: a receiver sees what's been delegated to
+them, a payer sees what they granted — without anyone manually sharing a JSON
+file. This page explains how that works and, just as importantly, why it adds **no
+new dependency**. If the discovery layer disappears, both sides keep using OurGlass
+exactly as before.
+
+## What gets recorded
+
+After a delegation is signed, OurGlass publishes it to Intuition as a small set of
+public **atoms** and **triples**: the payer's and receiver's accounts, the signed
+delegation document (pinned to IPFS), and the relationships between them (`owns`,
+`delegate to`, `in context of`).
+
+This is an **attestation** — a public statement that "this delegation exists." It
+carries no funds and no authority.
+
+## The publisher
+
+A browser can't safely hold the funded key that pays to write to Intuition, so a
+small **publisher** service does it: it takes the already-signed delegation, pins
+the document, and writes the attestation. The publisher:
+
+- **holds no custody** — it never touches the payer's funds; those stay in the
+  Safe, moved only by an on-chain charge within the caveat;
+- **has no authority over the delegation** — it cannot create, alter, or forge
+  one; a delegation is valid only with the payer's EIP-712 signature, enforced
+  on-chain;
+- **cannot censor** — a receiver can always charge without it (see below).
+
+It is an **indexer**, not a gatekeeper.
+
+## It is a convenience, never a dependency
+
+The source of truth is, and remains, **on-chain**: the payer's signature and the
+`DelegationManager`. Intuition is an **index** on top of that — it makes
+delegations *discoverable*, nothing more. If the publisher or Intuition is
+unavailable, OurGlass keeps working:
+
+| | If discovery is down |
+|---|---|
+| **Payer** — create + revoke | Unaffected. Building and signing a delegation is entirely client-side; publishing is best-effort and never blocks signing. Revoking is an on-chain `disableDelegation`. |
+| **Receiver** — charge / claim | Unaffected. The signed delegation can always be **imported manually** and redeemed on-chain. Auto-discovery is a shortcut, not a requirement. |
+| **Funds** | Unaffected. Non-custodial throughout — the publisher holds no keys. |
+| **The agreement itself** | Unaffected. It lives in the signature + the on-chain framework, not in Intuition. |
+
+What you lose without the index is only the **convenience** of auto-listing — you
+fall back to sharing and importing the delegation JSON, exactly how OurGlass worked
+before discovery existed.
+
+## How the apps use it
+
+- The **Charge** page (Safe App) and the **redeem** console list the active
+  delegations made to the connected account, read from Intuition.
+- Each list keeps a **"manually import a delegation"** fallback, so a charge never
+  depends on the index being up.
+- Both paths run the identical on-chain redeem — discovery only decides *which*
+  delegations are shown, not whether they can be charged.
+
+## Active vs revoked
+
+Intuition records that a delegation *exists*; it does not own its *status*. So
+OurGlass treats the two separately:
+
+- **Intuition is the index** — which delegations exist and what they mean.
+- **The origin-chain `DelegationManager` is the source of truth** — whether a
+  delegation is still enabled or has been revoked.
+
+A delegation is listed as active only after it is discovered on Intuition **and**
+confirmed enabled on-chain. A revoked delegation may still appear in the graph, but
+the redeem reverts — the chain, not the index, has the final say.
+
+## Public by design
+
+These attestations are public: anyone can read the Intuition graph, including the
+delegation document (parties, token, amount, cadence). That visibility is the whole
+point — it's what lets a receiver find what's owed to them. Don't publish a
+delegation whose terms you need to keep private. (The agreement was already pinned
+to public IPFS before discovery existed; this makes it *findable*, not merely
+*reachable*.)

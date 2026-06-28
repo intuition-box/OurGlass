@@ -20,6 +20,10 @@ Framework — OurGlass adds no custom on-chain logic.
 - **Revocable.** The payer can cancel any agreement on-chain at any time.
 - **Auditable.** The human-readable agreement is pinned to IPFS, and its hash is
   the delegation salt — so the signature is bound to the exact terms.
+- **Discoverable, not dependent.** Signed delegations are recorded on the
+  [Intuition graph](/docs/concepts/discovery) so the receiver can find them — but
+  that index is a convenience: if it's down, both sides still create, sign, and
+  charge exactly as before.
 
 ## Two products, one model
 

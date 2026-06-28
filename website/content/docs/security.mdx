@@ -50,6 +50,22 @@ Funds never leave the payer's Safe until a charge executes, and a charge can onl
 move tokens within the caveat's bound. OurGlass holds no keys to the payer's
 funds.
 
+## Discovery adds no trust
+
+OurGlass publishes each signed delegation to the
+[Intuition graph](/docs/concepts/discovery) so it can be discovered. That publisher
+is an **indexer, not a trusted party**:
+
+- It holds no keys to your funds — non-custodial, as above.
+- It cannot forge or alter a delegation; only the payer's EIP-712 signature,
+  checked on-chain, makes one valid.
+- It cannot block a charge — a receiver can always import the signed delegation and
+  redeem on-chain without it.
+
+If the publisher or Intuition is unavailable, both sides keep using OurGlass; only
+auto-discovery is lost. The source of truth is the signature and the
+`DelegationManager`, never the index.
+
 ## Signatures and replay
 
 Each agreement is a single EIP-712 delegation. Replay protection comes from the
