@@ -31,6 +31,10 @@ COPY website/package.json website/package-lock.json ./
 RUN npm ci --ignore-scripts
 
 COPY website/ ./
+# Next inlines NEXT_PUBLIC_* at build time. Which Intuition network the /redeem
+# page queries: testnet on previews, mainnet on prod. Set as a Coolify build var.
+ARG NEXT_PUBLIC_INTUITION_NETWORK=testnet
+ENV NEXT_PUBLIC_INTUITION_NETWORK=$NEXT_PUBLIC_INTUITION_NETWORK
 RUN npm run build
 # -> /site/out
 
