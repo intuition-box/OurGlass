@@ -41,21 +41,34 @@ attestor nonce.
 | `ALLOWED_ORIGIN` | no | apex + `*.ourglass.intuition.box` + localhost | Comma-separated; supports `*` and subdomain wildcards. Default accepts every PR preview subdomain. |
 | `PUBLISH_SECRET` | no | — | If set, require `x-publish-secret` to match. |
 
-## Coolify
+## Deploy
 
-Deploy as a **separate service** from the static Safe App:
+### Recommended: same app (default)
 
-- Dockerfile: `server/Dockerfile`, build context = repo root.
-- Set the env vars above (NOT as build args — they're runtime secrets).
-- Point the Safe App's `VITE_INTUITION_PUBLISHER_URL` at this service's URL.
+The root `Dockerfile` already runs this publisher **inside the web container**:
+Caddy serves the static apps and reverse-proxies `/intuition/*` to the publisher
+(`server/entrypoint.sh` starts both). One deploy, one origin, no CORS, no separate
+domain or cert — and it works on every PR preview automatically. The Safe App's
+`VITE_INTUITION_PUBLISHER_URL` defaults to `/intuition` (a same-origin path), so
+there's nothing to set on the frontend.
 
-### Preview deployments
+You only set the publisher's **runtime** secrets on the existing Coolify app
+(regular env vars, NOT build args, NEVER `VITE_`-prefixed):
 
-One shared publisher serves all PR previews. Define `VITE_INTUITION_PUBLISHER_URL`
-(and `VITE_PINATA_JWT`) as **project-level build variables** in Coolify so every
-preview build bakes them in (Vite inlines `VITE_*` at build time — see the build
-args in the root `Dockerfile`). The publisher's default CORS already accepts
-`https://*.ourglass.intuition.box`, so preview origins work without per-PR setup.
+- `INTUITION_ATTESTOR_PK` — the funded attestor key
+- `PINATA_JWT` — the Pinata JWT
+- (`INTUITION_NETWORK` defaults to `testnet` in the image)
+
+Then redeploy. Verify: `https://<host>/intuition/health` → `{"ok":true,...}`. If the
+publisher can't start (e.g. missing key), Caddy still serves the site — auto-publish
+just degrades to "publishing not configured".
+
+### Alternative: standalone service
+
+To run it separately instead, use `server/Dockerfile` (build context = repo root)
+as its own Coolify service, set the env vars above on that service, and point the
+Safe App's `VITE_INTUITION_PUBLISHER_URL` build var at its URL. Its default CORS
+accepts `https://*.ourglass.intuition.box`, so previews work without per-PR setup.
 
 ## Abuse note
 
