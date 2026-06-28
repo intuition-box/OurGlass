@@ -8,10 +8,16 @@ RUN bun install
 
 COPY . .
 
-# Vite inlines VITE_* at build time, so the value must be present NOW.
-# In Coolify set this as a Build-time variable / build arg.
+# Vite inlines VITE_* at build time, so the values must be present NOW.
+# In Coolify set these as Build-time variables / build args — define them at the
+# project level so every deployment, including each PR preview, inherits them.
 ARG VITE_PINATA_JWT
 ENV VITE_PINATA_JWT=$VITE_PINATA_JWT
+# URL of the Intuition publisher backend (one shared backend serves all previews).
+ARG VITE_INTUITION_PUBLISHER_URL
+ENV VITE_INTUITION_PUBLISHER_URL=$VITE_INTUITION_PUBLISHER_URL
+ARG VITE_INTUITION_PUBLISHER_SECRET
+ENV VITE_INTUITION_PUBLISHER_SECRET=$VITE_INTUITION_PUBLISHER_SECRET
 RUN bun run build
 # -> /app/dist (asset URLs prefixed with /safe-app/)
 

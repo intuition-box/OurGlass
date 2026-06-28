@@ -38,7 +38,7 @@ attestor nonce.
 | `PINATA_JWT` | yes | — | Pins the DelegationJson document (server-side; no `VITE_`). |
 | `INTUITION_NETWORK` | no | `testnet` | `testnet` (13579) or `mainnet` (1155). |
 | `PORT` | no | `8787` | |
-| `ALLOWED_ORIGIN` | no | `*` | Set to the Safe App origin in production. |
+| `ALLOWED_ORIGIN` | no | apex + `*.ourglass.intuition.box` + localhost | Comma-separated; supports `*` and subdomain wildcards. Default accepts every PR preview subdomain. |
 | `PUBLISH_SECRET` | no | — | If set, require `x-publish-secret` to match. |
 
 ## Coolify
@@ -48,6 +48,14 @@ Deploy as a **separate service** from the static Safe App:
 - Dockerfile: `server/Dockerfile`, build context = repo root.
 - Set the env vars above (NOT as build args — they're runtime secrets).
 - Point the Safe App's `VITE_INTUITION_PUBLISHER_URL` at this service's URL.
+
+### Preview deployments
+
+One shared publisher serves all PR previews. Define `VITE_INTUITION_PUBLISHER_URL`
+(and `VITE_PINATA_JWT`) as **project-level build variables** in Coolify so every
+preview build bakes them in (Vite inlines `VITE_*` at build time — see the build
+args in the root `Dockerfile`). The publisher's default CORS already accepts
+`https://*.ourglass.intuition.box`, so preview origins work without per-PR setup.
 
 ## Abuse note
 

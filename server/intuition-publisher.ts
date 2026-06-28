@@ -11,6 +11,7 @@ import {
   type IntuitionNetwork,
 } from '../src/lib/intuition'
 import type { DelegationStruct } from '../src/lib/delegations'
+import { isOriginAllowed, parseAllowedOrigins } from './cors'
 
 /**
  * Intuition publisher: a node-side service that holds the funded attestor key and
@@ -30,8 +31,11 @@ if (!pinataJwt) throw new Error('PINATA_JWT is required')
 
 const network = (process.env.INTUITION_NETWORK ?? 'testnet') as IntuitionNetwork
 const port = Number(process.env.PORT ?? '8787')
-const allowedOrigin = process.env.ALLOWED_ORIGIN ?? '*'
 const publishSecret = process.env.PUBLISH_SECRET
+
+// The matched request origin is echoed back (never a bare `*`), so PR preview
+// subdomains are accepted without per-PR config. See server/cors.ts.
+const allowedOriginPatterns = parseAllowedOrigins(process.env.ALLOWED_ORIGIN)
 
 const config = getIntuitionNetwork(network)
 const account = privateKeyToAccount(pk)
@@ -132,42 +136,47 @@ async function handlePublish(body: PublishBody): Promise<{ uri: string; result: 
   return { uri, result }
 }
 
-function cors(): Record<string, string> {
-  return {
-    'Access-Control-Allow-Origin': allowedOrigin,
+function cors(origin: string | null): Record<string, string> {
+  const headers: Record<string, string> = {
     'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, x-publish-secret',
+    Vary: 'Origin',
   }
+  if (origin && isOriginAllowed(origin, allowedOriginPatterns)) {
+    headers['Access-Control-Allow-Origin'] = origin
+  }
+  return headers
 }
 
-function json(payload: unknown, status: number): Response {
+function json(payload: unknown, status: number, origin: string | null): Response {
   return new Response(JSON.stringify(payload), {
     status,
-    headers: { 'Content-Type': 'application/json', ...cors() },
+    headers: { 'Content-Type': 'application/json', ...cors(origin) },
   })
 }
 
 Bun.serve({
   port,
   async fetch(req) {
-    if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors() })
+    const origin = req.headers.get('Origin')
+    if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors(origin) })
     const url = new URL(req.url)
     if (req.method === 'GET' && url.pathname === '/health') {
-      return json({ ok: true, network, attestor: account.address }, 200)
+      return json({ ok: true, network, attestor: account.address }, 200, origin)
     }
     if (req.method === 'POST' && url.pathname === '/publish') {
       if (publishSecret && req.headers.get('x-publish-secret') !== publishSecret) {
-        return json({ error: 'unauthorized' }, 401)
+        return json({ error: 'unauthorized' }, 401, origin)
       }
       try {
         const body = parseBody(await req.json())
         const out = await enqueue(() => handlePublish(body))
-        return json(out, 200)
+        return json(out, 200, origin)
       } catch (err) {
-        return json({ error: err instanceof Error ? err.message : 'publish failed' }, 400)
+        return json({ error: err instanceof Error ? err.message : 'publish failed' }, 400, origin)
       }
     }
-    return json({ error: 'not found' }, 404)
+    return json({ error: 'not found' }, 404, origin)
   },
 })
 
