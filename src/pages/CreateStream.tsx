@@ -449,6 +449,13 @@ export default function CreateStream() {
           </div>
         )}
 
+        {/* Block 0 — Sender (this Safe and the org that owns it) */}
+        <Block title="Sender">
+          <Field label="Organization" hint="The org that owns this Safe — reuse one from Intuition or create it. Recorded as “org owns Safe”. Optional.">
+            <OrgPicker safeAddress={safe.safeAddress as Address} safeChainId={safe.chainId} value={org} onChange={setOrg} />
+          </Field>
+        </Block>
+
         {/* Block 1 — Beneficiary */}
         <Block title="Beneficiary">
           <Field label="Name">
@@ -460,9 +467,6 @@ export default function CreateStream() {
               {beneficiarySuggestions.map((s) => <option key={s.value} value={s.value} label={s.label} />)}
             </datalist>
             {recipient && !recipientValid && <p className="text-xs text-danger mt-1">Invalid address</p>}
-          </Field>
-          <Field label="Organization" hint="The org that owns this Safe — reuse one from Intuition or create it. Recorded as “org owns Safe”. Optional.">
-            <OrgPicker safeAddress={safe.safeAddress as Address} safeChainId={safe.chainId} value={org} onChange={setOrg} />
           </Field>
         </Block>
 

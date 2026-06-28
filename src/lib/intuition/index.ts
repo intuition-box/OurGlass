@@ -39,5 +39,6 @@ export {
 export {
   searchOrganizations,
   findOwningOrganization,
+  activeIntuitionNetwork,
   type OrgAtom,
 } from './organizations'

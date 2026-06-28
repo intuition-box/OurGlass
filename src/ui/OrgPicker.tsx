@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Address } from 'viem'
-import { searchOrganizations, findOwningOrganization, type OrgAtom } from '../lib/intuition'
+import {
+  searchOrganizations,
+  findOwningOrganization,
+  activeIntuitionNetwork,
+  portalAtomUrl,
+  type OrgAtom,
+} from '../lib/intuition'
 import type { OrgSelection } from '../lib/orgSelection'
+import { IconExt } from './icons'
 
 /**
  * Organization picker: type a name to reuse an existing Intuition Organization
@@ -78,6 +85,7 @@ export function OrgPicker({
   }
 
   const exactExists = results.some((r) => r.name.toLowerCase() === text.trim().toLowerCase())
+  const network = activeIntuitionNetwork()
 
   return (
     <div ref={boxRef} className="relative">
@@ -91,7 +99,15 @@ export function OrgPicker({
       />
       {value?.atomId && (
         <p className="text-[11px] text-faint mt-1">
-          Reusing the existing Intuition organization · <span className="font-mono">{shortHex(value.atomId)}</span>
+          Reusing the existing Intuition organization ·{' '}
+          <a
+            href={portalAtomUrl(value.atomId, network)}
+            target="_blank"
+            rel="noreferrer"
+            className="font-mono text-[color:var(--accent)] hover:underline inline-flex items-center gap-1"
+          >
+            {shortHex(value.atomId)} <IconExt size={10} className="opacity-60" />
+          </a>
         </p>
       )}
       {value && value.atomId === null && (
@@ -101,19 +117,32 @@ export function OrgPicker({
         <div className="absolute z-20 left-0 right-0 mt-1 rounded-xl glass-strong ring-1 ring-line overflow-hidden">
           {loading && <div className="px-3 py-2 text-xs text-faint">Searching Intuition…</div>}
           {results.map((r) => (
-            <button
-              key={r.atomId}
-              type="button"
-              onClick={() => {
-                setText(r.name)
-                onChange({ atomId: r.atomId, name: r.name })
-                setOpen(false)
-              }}
-              className="w-full text-left px-3 py-2 text-sm hover:bg-[#212B43] transition flex items-center justify-between gap-2"
-            >
-              <span className="text-ink">{r.name}</span>
-              <span className="text-[10px] text-faint uppercase tracking-wide">existing · reuse</span>
-            </button>
+            <div key={r.atomId} className="flex items-center hover:bg-[#212B43] transition">
+              <button
+                type="button"
+                onClick={() => {
+                  setText(r.name)
+                  onChange({ atomId: r.atomId, name: r.name })
+                  setOpen(false)
+                }}
+                className="flex-1 min-w-0 text-left px-3 py-2 text-sm flex items-center justify-between gap-2"
+              >
+                <span className="text-ink truncate">{r.name}</span>
+                <span className="text-[10px] text-faint uppercase tracking-wide shrink-0">reuse</span>
+              </button>
+              {/* Inspect this atom on the portal — useful to pick between same-name orgs. */}
+              <a
+                href={portalAtomUrl(r.atomId, network)}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                title="Inspect on the Intuition portal"
+                aria-label={`Inspect ${r.name} on the Intuition portal`}
+                className="shrink-0 px-3 py-2 text-faint hover:text-[color:var(--accent)] transition"
+              >
+                <IconExt size={13} />
+              </a>
+            </div>
           ))}
           {!loading && !exactExists && (
             <button

@@ -28,6 +28,11 @@ function activeRead(): OrgReadConfig {
   return import.meta.env.VITE_INTUITION_NETWORK === 'mainnet' ? READ.mainnet : READ.testnet
 }
 
+/** The Intuition network the app reads from (for portal links). */
+export function activeIntuitionNetwork(): IntuitionNetwork {
+  return activeRead().network
+}
+
 export interface OrgAtom {
   atomId: Hex
   name: string
