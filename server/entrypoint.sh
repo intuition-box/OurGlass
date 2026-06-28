@@ -4,6 +4,6 @@
 # the static apps — auto-publish degrades, the site stays up.
 set -e
 
-( cd /publisher && bun server/intuition-publisher.ts ) &
+( cd /publisher && bun server/intuition-publisher.ts; echo "[entrypoint] publisher exited ($?)" ) &
 
 exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile

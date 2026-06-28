@@ -26,9 +26,6 @@ import { isOriginAllowed, parseAllowedOrigins } from './cors'
 
 const pk = process.env.INTUITION_ATTESTOR_PK
 const pinataJwt = process.env.PINATA_JWT
-if (!pk || !isHex(pk)) throw new Error('INTUITION_ATTESTOR_PK must be a 0x private key')
-if (!pinataJwt) throw new Error('PINATA_JWT is required')
-
 const network = (process.env.INTUITION_NETWORK ?? 'testnet') as IntuitionNetwork
 const port = Number(process.env.PORT ?? '8787')
 const publishSecret = process.env.PUBLISH_SECRET
@@ -38,14 +35,33 @@ const publishSecret = process.env.PUBLISH_SECRET
 const allowedOriginPatterns = parseAllowedOrigins(process.env.ALLOWED_ORIGIN)
 
 const config = getIntuitionNetwork(network)
-const account = privateKeyToAccount(pk)
-const transport = http(config.rpcUrl)
-const chain = createViemChain(
-  createPublicClient({ chain: config.chain, transport }),
-  createWalletClient({ account, chain: config.chain, transport }),
-  config.multiVault,
-)
-const pinner = createGraphqlPinner(config.graphqlUrl)
+
+// Start regardless of config so /health always answers and reports what's missing
+// (a misconfigured deploy must be diagnosable, not a dead process behind a 502).
+const missing: string[] = []
+if (!pk || !isHex(pk)) missing.push('INTUITION_ATTESTOR_PK')
+if (!pinataJwt) missing.push('PINATA_JWT')
+
+interface Runtime {
+  account: ReturnType<typeof privateKeyToAccount>
+  chain: ReturnType<typeof createViemChain>
+  pinner: ReturnType<typeof createGraphqlPinner>
+  pinataJwt: string
+}
+
+function buildRuntime(): Runtime | null {
+  if (!pk || !isHex(pk) || !pinataJwt) return null
+  const account = privateKeyToAccount(pk)
+  const transport = http(config.rpcUrl)
+  const chain = createViemChain(
+    createPublicClient({ chain: config.chain, transport }),
+    createWalletClient({ account, chain: config.chain, transport }),
+    config.multiVault,
+  )
+  return { account, chain, pinner: createGraphqlPinner(config.graphqlUrl), pinataJwt }
+}
+
+const runtime = buildRuntime()
 
 interface PublishBody {
   delegation: DelegationStruct
@@ -115,11 +131,11 @@ function enqueue<T>(fn: () => Promise<T>): Promise<T> {
   return run
 }
 
-async function handlePublish(body: PublishBody): Promise<{ uri: string; result: unknown }> {
+async function handlePublish(rt: Runtime, body: PublishBody): Promise<{ uri: string; result: unknown }> {
   const doc = buildDelegationDocument({ delegation: body.delegation, details: body.details })
-  const uri = await pinToPinata(pinataJwt!, doc, 'ourglass-delegation')
+  const uri = await pinToPinata(rt.pinataJwt, doc, 'ourglass-delegation')
   const result = await publishDelegation(
-    { chain, pinner, config },
+    { chain: rt.chain, pinner: rt.pinner, config },
     {
       delegator: { address: body.delegation.delegator, chainId: body.chainId },
       recipient: { kind: 'caip10', address: body.delegation.delegate, chainId: body.chainId },
@@ -162,15 +178,22 @@ Bun.serve({
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors(origin) })
     const url = new URL(req.url)
     if (req.method === 'GET' && url.pathname === '/health') {
-      return json({ ok: true, network, attestor: account.address }, 200, origin)
+      return json(
+        { ok: true, network, ready: runtime !== null, missing, attestor: runtime?.account.address ?? null },
+        200,
+        origin,
+      )
     }
     if (req.method === 'POST' && url.pathname === '/publish') {
+      if (!runtime) {
+        return json({ error: 'publisher not configured', missing }, 503, origin)
+      }
       if (publishSecret && req.headers.get('x-publish-secret') !== publishSecret) {
         return json({ error: 'unauthorized' }, 401, origin)
       }
       try {
         const body = parseBody(await req.json())
-        const out = await enqueue(() => handlePublish(body))
+        const out = await enqueue(() => handlePublish(runtime, body))
         return json(out, 200, origin)
       } catch (err) {
         return json({ error: err instanceof Error ? err.message : 'publish failed' }, 400, origin)
@@ -180,4 +203,8 @@ Bun.serve({
   },
 })
 
-console.log(`intuition-publisher on :${port} → ${network} (attestor ${account.address})`)
+console.log(
+  runtime
+    ? `intuition-publisher on :${port} → ${network} (attestor ${runtime.account.address})`
+    : `intuition-publisher on :${port} → ${network} — NOT READY, missing: ${missing.join(', ')}`,
+)
