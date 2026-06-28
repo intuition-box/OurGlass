@@ -84,6 +84,38 @@ export function findPeriodTransferCaveat(
   return delegation.caveats.find((c) => enforcers.includes(c.enforcer.toLowerCase())) ?? null
 }
 
+export interface StreamingTerms {
+  token: Address
+  initialAmount: bigint
+  maxAmount: bigint
+  amountPerSecond: bigint
+  startTime: bigint
+}
+
+/** Decode the erc20Streaming caveat terms: token(20) + 4×uint256 (148 bytes). */
+export function decodeStreamingTerms(terms: Hex): StreamingTerms {
+  return {
+    token: getAddress(sliceHex(terms, 0, 20)),
+    initialAmount: hexToBigInt(sliceHex(terms, 20, 52)),
+    maxAmount: hexToBigInt(sliceHex(terms, 52, 84)),
+    amountPerSecond: hexToBigInt(sliceHex(terms, 84, 116)),
+    startTime: hexToBigInt(sliceHex(terms, 116, 148)),
+  }
+}
+
+// Canonical ERC20StreamingEnforcer (deterministic across chains) from the SDK.
+const CANONICAL_STREAMING_ENFORCER = '0x56c97aE02f233B29fa03502Ecc0457266d9be00e'
+
+export function findStreamingCaveat(
+  delegation: DelegationStruct,
+  chainId: number,
+): { enforcer: Address; terms: Hex } | null {
+  const enforcers = [CANONICAL_STREAMING_ENFORCER, getAddresses(chainId).ourglass?.erc20StreamingEnforcer]
+    .filter((a): a is Address => Boolean(a))
+    .map((a) => a.toLowerCase())
+  return delegation.caveats.find((c) => enforcers.includes(c.enforcer.toLowerCase())) ?? null
+}
+
 export function periodFromSeconds(seconds: bigint): string {
   switch (seconds) {
     case 60n:
@@ -146,6 +178,8 @@ async function tokenDecimals(chainId: number, token: Address): Promise<number> {
   }
 }
 
+const MONTH_SECONDS = 2_592_000n
+
 async function toStoredDelegation(
   doc: DelegationDocument,
   uri: string,
@@ -154,28 +188,56 @@ async function toStoredDelegation(
 ): Promise<StoredDelegation | null> {
   const delegation = doc.delegation
   const chainId = chainIdFromCaip10(delegatorData) ?? recipientChainId
-  const caveat = findPeriodTransferCaveat(delegation, chainId)
-  if (!caveat) return null
-  const { token, periodAmount, periodDuration } = decodePeriodTransferTerms(caveat.terms)
-  const decimals = await tokenDecimals(chainId, token)
-  return {
-    delegation,
-    meta: {
-      label: doc.name || doc.description || 'Delegation',
-      scopeType: 'erc20SpendingLimit',
-      createdAt: '',
-      chainId,
-      safeAddress: delegation.delegator,
-      moduleAddress: delegation.delegator,
-      status: 'signed',
-      delegationHash: computeDelegationHash(delegation),
-      agreement: { cid: uri.replace('ipfs://', ''), uri, termsHash: delegation.salt },
-      amount: formatUnits(periodAmount, decimals),
-      period: periodFromSeconds(periodDuration),
-      tokenAddress: token,
-      recipient: delegation.delegate,
-    },
+  const common = {
+    label: doc.name || doc.description || 'Delegation',
+    createdAt: '',
+    chainId,
+    safeAddress: delegation.delegator,
+    moduleAddress: delegation.delegator,
+    delegationHash: computeDelegationHash(delegation),
+    agreement: { cid: uri.replace('ipfs://', ''), uri, termsHash: delegation.salt },
+    recipient: delegation.delegate,
   }
+
+  const sub = findPeriodTransferCaveat(delegation, chainId)
+  if (sub) {
+    const { token, periodAmount, periodDuration } = decodePeriodTransferTerms(sub.terms)
+    const decimals = await tokenDecimals(chainId, token)
+    return {
+      delegation,
+      meta: {
+        ...common,
+        scopeType: 'erc20SpendingLimit',
+        status: 'signed',
+        amount: formatUnits(periodAmount, decimals),
+        period: periodFromSeconds(periodDuration),
+        tokenAddress: token,
+      },
+    }
+  }
+
+  const stream = findStreamingCaveat(delegation, chainId)
+  if (stream) {
+    const { token, initialAmount, maxAmount, amountPerSecond, startTime } = decodeStreamingTerms(stream.terms)
+    const decimals = await tokenDecimals(chainId, token)
+    return {
+      delegation,
+      meta: {
+        ...common,
+        scopeType: 'erc20Streaming',
+        status: 'signed',
+        tokenAddress: token,
+        amountPerSecond: amountPerSecond.toString(),
+        initialAmount: initialAmount.toString(),
+        maxAmount: maxAmount.toString(),
+        startTime: Number(startTime),
+        ratePerPeriod: formatUnits(amountPerSecond * MONTH_SECONDS, decimals),
+        ratePeriod: 'month',
+      },
+    }
+  }
+
+  return null
 }
 
 export async function discoverIncomingDelegations(

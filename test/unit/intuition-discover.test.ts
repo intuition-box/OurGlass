@@ -11,6 +11,7 @@ import {
   caip10Uri,
   chainIdFromCaip10,
   decodePeriodTransferTerms,
+  decodeStreamingTerms,
   periodFromSeconds,
 } from '../../website/src/redeem/lib/intuition/discover'
 
@@ -43,6 +44,21 @@ describe('decodePeriodTransferTerms', () => {
     expect(t.periodAmount).toBe(300_000_000n) // 300 USDC @ 6dp
     expect(t.periodDuration).toBe(2_592_000n) // monthly
     expect(t.startDate).toBe(1_782_341_632n)
+  })
+})
+
+describe('decodeStreamingTerms', () => {
+  test('decodes token(20) + initial + max + perSecond + start (148 bytes)', () => {
+    const terms = encodePacked(
+      ['address', 'uint256', 'uint256', 'uint256', 'uint256'],
+      [TOKEN, 1_000_000n, 1_000_000_000n, 380n, 1_782_341_632n],
+    )
+    const t = decodeStreamingTerms(terms)
+    expect(t.token).toBe(TOKEN)
+    expect(t.initialAmount).toBe(1_000_000n)
+    expect(t.maxAmount).toBe(1_000_000_000n)
+    expect(t.amountPerSecond).toBe(380n)
+    expect(t.startTime).toBe(1_782_341_632n)
   })
 })
 
