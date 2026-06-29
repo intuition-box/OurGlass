@@ -81,12 +81,26 @@ body {
   }
 }
 
+/* The rotating liseret on the live-stats chrono. */
+.og-chrono-spin {
+  transform-origin: center;
+  animation: og-spin 9s linear infinite;
+}
+@keyframes og-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .stream-edge {
     animation: none;
   }
   .hero-video {
     display: none;
+  }
+  .og-chrono-spin {
+    animation: none;
   }
 }
 

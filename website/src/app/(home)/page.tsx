@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { SafeAppRedirect } from '@/components/safe-app-redirect';
+import { LiveStats } from '@/components/live-stats';
 import { redeemRoute, safeGlobalUrl } from '@/lib/shared';
 
 const FEATURES: Array<{ lead: string; rest: string }> = [
@@ -30,6 +31,11 @@ export default function Home() {
                 'linear-gradient(90deg, var(--color-base) 0%, rgba(10,10,11,0) 45%), linear-gradient(180deg, var(--color-base) 0%, rgba(10,10,11,0) 18%), linear-gradient(0deg, var(--color-base) 0%, rgba(10,10,11,0) 22%)',
             }}
           />
+        </div>
+
+        {/* live-stats chrono, centered over the hero */}
+        <div className="pointer-events-none absolute inset-0 z-10 hidden items-center justify-center px-8 lg:flex" aria-hidden="true">
+          <LiveStats />
         </div>
 
         <div className="relative z-10 mt-12 max-w-[880px]">
