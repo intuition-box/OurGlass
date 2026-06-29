@@ -47,6 +47,24 @@ Costs are governance-configurable — re-read before any write batch.
    triples, and a triple is a valid slot in another triple. `createTriples` takes
    symmetric `bytes32` slots, so object-side nesting (our shape) works identically.
 
+## Mainnet predicates (verified 2026-06-29, read-only)
+
+Provisioned for prod on Intuition mainnet (1155), MultiVault
+`0x6E35cF57A41fA15eA0EaE9C33e751b01A784Fe7e`. atomCost/tripleCost ≈ 1e17 wei
+(100× testnet). The attestor is funded with $TRUST.
+
+| Predicate | term_id | Status |
+|---|---|---|
+| `owns` | `0xdd3eb9326e013e0ffecb067709bbf6cb6352122e025faede9c887b7c9ac4b773` | Reuse — established `Thing` (also the testnet id; atom id is deterministic from data). |
+| `in context of` | `0x892054b01d389bfe566166120470f572a56e3d4cd88c599b52c4708949625390` | Reuse — canonical `Thing`, 999 uses (distinct from the testnet id). |
+| `delegate to` | `0xb56980d42a3b03455bf41ea20fe04ae223fca0b9e688994dc661414e81e6433b` | Create on first publish — not yet on mainnet. Its id is `calculateAtomId` of our fixed pin payload, which is **chain-independent**, so it equals the testnet id. |
+
+These ids are wired into both the write config (`src/lib/intuition/network.ts`) and
+the read configs (`src/lib/intuition/discover.ts`, `organizations.ts`, and the
+website `redeem/lib/intuition/network.ts`). `delegate to` is created (paid in
+$TRUST) on the first mainnet publish; discovery finds nothing on mainnet until
+then, which is correct (no triples reference it yet).
+
 ## Detection note (for the Phase 3 query layer)
 
 GraphQL resolves a `subject`/`object` relation to `null` when that slot holds a

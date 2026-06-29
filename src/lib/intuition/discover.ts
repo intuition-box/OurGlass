@@ -39,8 +39,11 @@ const READ: Record<IntuitionNetwork, ReadConfig> = {
     delegateTo: '0xb56980d42a3b03455bf41ea20fe04ae223fca0b9e688994dc661414e81e6433b',
     inContextOf: '0x61a88b9c372c0d164d2caf66947b67ed0fcb4c457178a271b6b3dc39fb1f8862',
   },
-  // term_ids unknown until the predicates are created on mainnet.
-  mainnet: { graphqlUrl: 'https://mainnet.intuition.sh/v1/graphql', delegateTo: null, inContextOf: null },
+  mainnet: {
+    graphqlUrl: 'https://mainnet.intuition.sh/v1/graphql',
+    delegateTo: '0xb56980d42a3b03455bf41ea20fe04ae223fca0b9e688994dc661414e81e6433b',
+    inContextOf: '0x892054b01d389bfe566166120470f572a56e3d4cd88c599b52c4708949625390',
+  },
 }
 
 function activeNetwork(): IntuitionNetwork {
