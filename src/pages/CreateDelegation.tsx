@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSafeAppsSDK } from '@safe-global/safe-apps-react-sdk'
-import { createPublicClient, http, isAddress, parseUnits, type Address, type Hex } from 'viem'
+import { createPublicClient, http, isAddress, parseUnits, formatUnits, type Address, type Hex } from 'viem'
 import { createDelegation } from '@metamask/smart-accounts-kit'
 import { DeleGatorModuleFactoryABI } from '../config/abis'
 import { getAddresses } from '../config/addresses'
@@ -26,10 +26,33 @@ import { Block, Field, Segmented, Row, PreviewRow } from '../ui/form'
 import { IconCube, IconLock, IconCheck, IconExt, IconHash } from '../ui/icons'
 import { findChain, USDC_ADDRESS, rpcUrl } from '../config/supported-chains'
 
-const PERIODS: PeriodType[] = ['minutely', 'daily', 'weekly', 'monthly']
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
+const trimAmount = (s: string) => (s.includes('.') ? s.replace(/\.?0+$/, '') : s)
+const trimNum = (n: number) => (Number.isFinite(n) ? String(Math.round(n * 100) / 100) : '')
+const dec = (v: string) => v.replace(',', '.').replace(/[^\d.]/g, '')
+const clampDur = (v: string) => { const n = parseFloat(v); return Number.isFinite(n) && n > 999 ? '999' : v }
+const dateStr = (sec: number) => new Date(sec * 1000).toLocaleDateString()
+const toDateInput = (sec: number) => new Date(sec * 1000).toISOString().slice(0, 10)
+
+// The four charge periods, shown as an interlinked table — editing any cell sets
+// the subscription period and the per-period amount; the others reflect the same
+// charge rate proportionally (display only).
+const PERIOD_SCALES: { key: PeriodType; label: string }[] = [
+  { key: 'weekly', label: 'Weekly' },
+  { key: 'biweekly', label: 'Bi-weekly' },
+  { key: 'monthly', label: 'Monthly' },
+  { key: 'yearly', label: 'Yearly' },
+]
+
+const DURATION_UNITS = [
+  { key: 'year', label: 'years', seconds: 31_104_000 },
+  { key: 'month', label: 'months', seconds: 2_592_000 },
+  { key: 'week', label: 'weeks', seconds: 604_800 },
+  { key: 'day', label: 'days', seconds: 86_400 },
+]
 
 type SignStep = 'idle' | 'building' | 'pinning' | 'signing'
+type BoundMode = 'revocation' | 'hardcap'
 
 function StepRow({ done, active, label, sub }: { done?: boolean; active?: boolean; label: string; sub?: string }) {
   return (
@@ -61,22 +84,35 @@ function StepRow({ done, active, label, sub }: { done?: boolean; active?: boolea
 export default function CreateDelegation() {
   const { sdk, safe } = useSafeAppsSDK()
 
+  // Block 0/1 — Sender + Beneficiary
   const [payeeName, setPayeeName] = useState('')
   const [org, setOrg] = useState<OrgSelection>(null)
   const [recipient, setRecipient] = useState('')
-  const [amount, setAmount] = useState('')
-  const [period, setPeriod] = useState<PeriodType>('monthly')
+
+  // Block 2 — Payment details
   const [useCustomToken, setUseCustomToken] = useState(false)
   const [customToken, setCustomToken] = useState('')
   const [customDecimals, setCustomDecimals] = useState(6)
-  const [expiryEnabled, setExpiryEnabled] = useState(false)
-  const [expiryDate, setExpiryDate] = useState('')
+  const [amount, setAmount] = useState('')
+  const [period, setPeriod] = useState<PeriodType>('monthly')
+  const amountRef = useRef<HTMLInputElement>(null)
+  const [rateHint, setRateHint] = useState(false)
+
+  // Block 3 — Security / limit (proportional hard cap = end date / duration / budget)
+  const [boundMode, setBoundMode] = useState<BoundMode>('revocation')
+  const [capDurationN, setCapDurationN] = useState('')
+  const [capDurationUnit, setCapDurationUnit] = useState('month')
+  const [activeTotal, setActiveTotal] = useState<string | null>(null)
 
   const [signing, setSigning] = useState(false)
   const [step, setStep] = useState<SignStep>('idle')
   const [pinnedCid, setPinnedCid] = useState<string | null>(null)
   const [signed, setSigned] = useState<StoredDelegation | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // A required field turns red only once touched (focused then left) and still invalid.
+  const [touchedBene, setTouchedBene] = useState(false)
+  const [touchedAmount, setTouchedAmount] = useState(false)
+  const [touchedCap, setTouchedCap] = useState(false)
 
   const { publish: publishToIntuition, status: intuitionStatus, enabled: intuitionEnabled } =
     usePublishToIntuition()
@@ -94,33 +130,113 @@ export default function CreateDelegation() {
 
   const defaultUsdc = USDC_ADDRESS[safe.chainId]
   const tokenAddress = useCustomToken ? customToken : defaultUsdc
-  const tokenDecimals = useCustomToken ? customDecimals : 6
+  const decimals = useCustomToken ? customDecimals : 6
   const tokenSymbol = useCustomToken ? 'tokens' : 'USDC'
 
-  const amountValid = !!amount && parseFloat(amount) > 0
   const recipientValid = isAddress(recipient)
   const tokenValid = !!tokenAddress && isAddress(tokenAddress)
-  const expiryValid = !expiryEnabled || !!expiryDate
-  const canSign = amountValid && recipientValid && tokenValid && expiryValid && !signing
+  const periodSeconds = Number(periodToSeconds(period))
+
+  const fmt = (raw: bigint) => trimAmount(formatUnits(raw, decimals))
+  const amountRaw = useMemo<bigint>(() => {
+    try { return amount ? parseUnits(amount, decimals) : 0n } catch { return 0n }
+  }, [amount, decimals])
+  const amountValid = amountRaw > 0n && tokenValid
+
+  // ---- Charge-rate table: cells interlink on the EXACT entered amount ----
+  function rateCellValue(p: PeriodType) {
+    if (p === period) return amount
+    if (!amount) return ''
+    try {
+      return trimAmount(formatUnits((amountRaw * periodToSeconds(p)) / periodToSeconds(period), decimals))
+    } catch { return '' }
+  }
+  function onRateChange(p: PeriodType, raw: string) {
+    setPeriod(p)
+    setAmount(dec(raw))
+  }
+
+  // ---- Hard-cap table (pivot = capDurationSeconds). Budget = amount × periods. ----
+  const capDurationSeconds = useMemo(() => {
+    const u = DURATION_UNITS.find((d) => d.key === capDurationUnit)
+    const n = parseFloat(capDurationN)
+    return u && n > 0 ? Math.round(n * u.seconds) : 0
+  }, [capDurationN, capDurationUnit])
+
+  const capBudgetRaw = useMemo<bigint>(
+    () => (amountRaw > 0n && periodSeconds > 0 ? (amountRaw * BigInt(capDurationSeconds)) / BigInt(periodSeconds) : 0n),
+    [amountRaw, capDurationSeconds, periodSeconds],
+  )
+  const capTotalValue = activeTotal !== null ? activeTotal : capDurationSeconds > 0 ? fmt(capBudgetRaw) : ''
+  function onTotalChange(raw: string) {
+    const v = dec(raw)
+    setActiveTotal(v)
+    try {
+      const budgetRaw = parseUnits(v, decimals)
+      if (amountRaw > 0n && budgetRaw > 0n) {
+        const secs = Number((budgetRaw * BigInt(periodSeconds)) / amountRaw)
+        const u = DURATION_UNITS.find((d) => d.key === capDurationUnit)!
+        setCapDurationN(trimNum(secs / u.seconds))
+      }
+    } catch {
+      /* partial input */
+    }
+  }
+  function onEndDateChange(v: string) {
+    const endSec = Math.floor(new Date(v).getTime() / 1000)
+    const nowSec = Math.floor(Date.now() / 1000)
+    if (Number.isFinite(endSec) && endSec > nowSec) {
+      const u = DURATION_UNITS.find((d) => d.key === capDurationUnit)!
+      setCapDurationN(trimNum((endSec - nowSec) / u.seconds))
+    }
+  }
+
+  // ---- Validation ----
+  const capValid = boundMode === 'revocation' || capDurationSeconds > 0
+  const ready = recipientValid && amountValid && tokenValid && capValid
+  const errs = {
+    beneficiary: touchedBene && !recipientValid,
+    amount: touchedAmount && !amountValid,
+    cap: touchedCap && boundMode === 'hardcap' && capDurationSeconds <= 0,
+  }
+  // A hard cap is defined relative to the charge, so an amount must exist first.
+  function onLimitChange(mode: BoundMode) {
+    if (mode === 'hardcap' && !amountValid) {
+      setRateHint(true)
+      amountRef.current?.focus()
+      return
+    }
+    setRateHint(false)
+    setBoundMode(mode)
+  }
+  function onSignClick() {
+    if (!ready) { setTouchedBene(true); setTouchedAmount(true); setTouchedCap(true); return }
+    handleSign()
+  }
+
+  const now = Math.floor(Date.now() / 1000)
+  const periodsCount = capDurationSeconds > 0 && periodSeconds > 0 ? capDurationSeconds / periodSeconds : 0
 
   // Live agreement preview — recomputed as the form changes, so the contract
   // hash the subscriber commits to is visible before signing.
   const preview = useMemo<AgreementDocument | null>(() => {
     if (!amountValid || !tokenValid || !recipientValid) return null
     try {
+      const nowSec = Math.floor(Date.now() / 1000)
+      const endDate = boundMode === 'hardcap' && capDurationSeconds > 0 ? nowSec + capDurationSeconds : null
       const terms = buildTerms({
         organization: { name: payeeName || 'Organization', recipient: recipient as Address, delegate: recipient as Address },
         subscriber: { label: 'Safe', account: safe.safeAddress as Address },
-        token: { address: tokenAddress as Address, symbol: tokenSymbol, decimals: tokenDecimals },
+        token: { address: tokenAddress as Address, symbol: tokenSymbol, decimals },
         amountPerPeriod: amount,
-        periodSeconds: Number(periodToSeconds(period)),
-        endDate: expiryEnabled && expiryDate ? Math.floor(new Date(expiryDate).getTime() / 1000) : null,
+        periodSeconds,
+        endDate,
       })
       return buildAgreementDocument({ id: 'preview', chainId: safe.chainId, terms })
     } catch {
       return null
     }
-  }, [amount, amountValid, tokenValid, recipientValid, tokenAddress, tokenDecimals, tokenSymbol, payeeName, recipient, period, expiryEnabled, expiryDate, safe.chainId, safe.safeAddress])
+  }, [amount, amountValid, tokenValid, recipientValid, tokenAddress, decimals, tokenSymbol, payeeName, recipient, periodSeconds, boundMode, capDurationSeconds, safe.chainId, safe.safeAddress])
 
   async function handleSign() {
     setSigning(true)
@@ -143,21 +259,23 @@ export default function CreateDelegation() {
       })) as Address
 
       const environment = getEnvironment(safe.chainId)
-      const now = Math.floor(Date.now() / 1000)
-      const expiryTs = expiryEnabled && expiryDate ? Math.floor(new Date(expiryDate).getTime() / 1000) : undefined
+      const nowSec = Math.floor(Date.now() / 1000)
+      // The hard cap is an end date enforced by the timestamp caveat; the budget is
+      // its implied total (amount × periods), informational only.
+      const expiryTs = boundMode === 'hardcap' && capDurationSeconds > 0 ? nowSec + capDurationSeconds : undefined
 
       // Pin the human-readable contract and bind the signature to it: salt = keccak256(terms).
       const terms = buildTerms({
         organization: { name: payeeName || 'Organization', recipient: recipient as Address, delegate },
         subscriber: { label: 'Safe', account: safe.safeAddress as Address },
-        token: { address: tokenAddress as Address, symbol: tokenSymbol, decimals: tokenDecimals },
+        token: { address: tokenAddress as Address, symbol: tokenSymbol, decimals },
         amountPerPeriod: amount,
-        periodSeconds: Number(periodToSeconds(period)),
-        startDate: now,
+        periodSeconds,
+        startDate: nowSec,
         endDate: expiryTs ?? null,
       })
       const agreement = buildAgreementDocument({
-        id: `sub_${now}_${(safe.safeAddress as string).slice(2, 10).toLowerCase()}`,
+        id: `sub_${nowSec}_${(safe.safeAddress as string).slice(2, 10).toLowerCase()}`,
         chainId: safe.chainId,
         terms,
       })
@@ -168,7 +286,7 @@ export default function CreateDelegation() {
       const salt = agreement.termsHash
 
       const additionalCaveats = expiryTs
-        ? [{ type: 'timestamp' as const, afterThreshold: now, beforeThreshold: expiryTs }]
+        ? [{ type: 'timestamp' as const, afterThreshold: nowSec, beforeThreshold: expiryTs }]
         : undefined
 
       const sdkDelegation = createDelegation({
@@ -178,9 +296,9 @@ export default function CreateDelegation() {
         scope: {
           type: 'erc20PeriodTransfer',
           tokenAddress: tokenAddress as Address,
-          periodAmount: parseUnits(amount, tokenDecimals),
-          periodDuration: Number(periodToSeconds(period)),
-          startDate: now,
+          periodAmount: parseUnits(amount, decimals),
+          periodDuration: periodSeconds,
+          startDate: nowSec,
         } as never,
         caveats: additionalCaveats as never,
         salt,
@@ -215,7 +333,7 @@ export default function CreateDelegation() {
           amount,
           period,
           tokenAddress: tokenAddress as Address,
-          expiryDate: expiryEnabled ? expiryDate : undefined,
+          expiryDate: expiryTs ? new Date(expiryTs * 1000).toISOString() : undefined,
           recipient: recipient as Address,
         },
       }
@@ -245,9 +363,17 @@ export default function CreateDelegation() {
     setRecipient('')
     setAmount('')
     setPeriod('monthly')
-    setExpiryEnabled(false)
-    setExpiryDate('')
+    setUseCustomToken(false)
+    setCustomToken('')
+    setBoundMode('revocation')
+    setCapDurationN('')
+    setCapDurationUnit('month')
+    setActiveTotal(null)
     setError(null)
+    setTouchedBene(false)
+    setTouchedAmount(false)
+    setTouchedCap(false)
+    setRateHint(false)
   }
 
   if (signed) {
@@ -268,7 +394,7 @@ export default function CreateDelegation() {
           </div>
 
           <div className="mt-5 rounded-xl bg-raised ring-1 ring-line divide-y divide-line">
-            <Row label="Payee"><Payee logo={((signed.meta.recipient ?? signed.delegation.delegate).slice(2, 4)).toUpperCase()} tint="#3B82F6" name={signed.meta.label} addr={short(signed.meta.recipient ?? signed.delegation.delegate)} size={32} /></Row>
+            <Row label="Beneficiary"><Payee logo={((signed.meta.recipient ?? signed.delegation.delegate).slice(2, 4)).toUpperCase()} tint="#3B82F6" name={signed.meta.label} addr={short(signed.meta.recipient ?? signed.delegation.delegate)} size={32} /></Row>
             <Row label="Charge"><span className="font-mono font-semibold text-ink">{signed.meta.amount} {signed.meta.tokenAddress ? 'USDC' : ''} / {signed.meta.period}</span></Row>
             <Row label="Contract hash"><Mono className="text-xs text-dim">{short(signed.meta.agreement!.termsHash)}</Mono></Row>
             <Row label="Delegation hash"><Mono className="text-xs text-dim">{short(signed.meta.delegationHash)}</Mono></Row>
@@ -319,8 +445,8 @@ export default function CreateDelegation() {
           <Field label="Name" hint="Shown in your subscriptions list. Optional.">
             <input type="text" placeholder="Acme Inc." value={payeeName} onChange={(e) => setPayeeName(e.target.value)} />
           </Field>
-          <Field label="Address" required missing={!!recipient && !recipientValid}>
-            <input type="text" placeholder="0x…" value={recipient} onChange={(e) => setRecipient(e.target.value)} className={recipient && !recipientValid ? 'ring-1 ring-danger' : ''} />
+          <Field label="Address" required missing={errs.beneficiary}>
+            <input type="text" placeholder="0x…" value={recipient} onChange={(e) => setRecipient(e.target.value)} onBlur={() => setTouchedBene(true)} className={errs.beneficiary || (recipient && !recipientValid) ? 'ring-1 ring-danger' : ''} />
             {recipient && !recipientValid && <p className="text-xs text-danger mt-1">Invalid address</p>}
           </Field>
         </Block>
@@ -346,19 +472,28 @@ export default function CreateDelegation() {
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Amount per period" required missing={!!amount && !amountValid}>
-              <div className="relative">
-                <input type="number" placeholder="10" value={amount} onChange={(e) => setAmount(e.target.value)} min={0} step="any" className="pr-16" />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">{tokenSymbol}</span>
-              </div>
-            </Field>
-            <Field label="Period">
-              <select value={period} onChange={(e) => setPeriod(e.target.value as PeriodType)}>
-                {PERIODS.map((p) => <option key={p} value={p}>{p[0].toUpperCase() + p.slice(1)}</option>)}
-              </select>
-            </Field>
-          </div>
+          <Field label="Charge rate" required missing={errs.amount}>
+            <div className="grid grid-cols-4 gap-2">
+              {PERIOD_SCALES.map((s, i) => (
+                <div key={s.key}>
+                  <div className="text-[11px] text-faint mb-1">{s.label}</div>
+                  <div className="relative">
+                    <input
+                      ref={i === 0 ? amountRef : undefined}
+                      type="text" inputMode="decimal" placeholder="0"
+                      value={rateCellValue(s.key)}
+                      onChange={(e) => onRateChange(s.key, e.target.value)}
+                      onFocus={(e) => { e.target.select(); setRateHint(false) }}
+                      onBlur={() => setTouchedAmount(true)}
+                      className={`pr-9 ${errs.amount ? 'ring-1 ring-danger' : ''}`}
+                    />
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-faint">{tokenSymbol}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {rateHint && <p className="text-xs text-pending mt-2">Set a charge amount first to fix a limit.</p>}
+          </Field>
         </Block>
 
         {/* Block 3 — Security / limit */}
@@ -366,18 +501,35 @@ export default function CreateDelegation() {
           title="Security / limit"
           action={
             <Segmented
-              value={expiryEnabled ? 'enddate' : 'revocation'}
-              onChange={(v) => setExpiryEnabled(v === 'enddate')}
-              options={[{ key: 'revocation', label: 'Revocation only' }, { key: 'enddate', label: 'End date' }]}
+              value={boundMode}
+              onChange={onLimitChange}
+              options={[{ key: 'revocation', label: 'Revocation only' }, { key: 'hardcap', label: 'Hard cap' }]}
             />
           }
         >
-          {expiryEnabled ? (
-            <Field label="End date" hint="After this date the subscription can no longer be charged.">
-              <input type="datetime-local" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} className="w-full" />
-            </Field>
-          ) : (
-            <p className="text-xs text-faint">No end date — the subscription runs until you revoke it. The per-period cap is always enforced on-chain.</p>
+          {boundMode === 'hardcap' && (
+            <div className={`mt-1 grid grid-cols-[1fr_1.35fr_1fr] rounded-xl ring-1 divide-x divide-line ${errs.cap ? 'ring-danger' : 'ring-line'}`}>
+              <div className="p-3">
+                <div className="text-[11px] text-faint mb-1.5 text-center uppercase tracking-wide">End date</div>
+                <input type="date" lang="en" value={capDurationSeconds > 0 ? toDateInput(now + capDurationSeconds) : ''} onChange={(e) => onEndDateChange(e.target.value)} onBlur={() => setTouchedCap(true)} className="w-full" />
+              </div>
+              <div className="p-3">
+                <div className="text-[11px] text-faint mb-1.5 text-center uppercase tracking-wide">Duration</div>
+                <div className="flex gap-1.5">
+                  <input type="text" inputMode="decimal" placeholder="6" value={capDurationN} onChange={(e) => setCapDurationN(clampDur(dec(e.target.value)))} onBlur={() => setTouchedCap(true)} className="flex-1 min-w-0 w-0" />
+                  <select value={capDurationUnit} onChange={(e) => setCapDurationUnit(e.target.value)} className="flex-1 min-w-0 w-0 px-1 truncate">
+                    {DURATION_UNITS.map((u) => <option key={u.key} value={u.key}>{u.label}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="p-3">
+                <div className="text-[11px] text-faint mb-1.5 text-center uppercase tracking-wide">Total budget</div>
+                <div className="relative">
+                  <input type="text" inputMode="decimal" placeholder="600" value={capTotalValue} onChange={(e) => onTotalChange(e.target.value)} onBlur={() => { setActiveTotal(null); setTouchedCap(true) }} className="w-full pr-12" />
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-faint">{tokenSymbol}</span>
+                </div>
+              </div>
+            </div>
           )}
         </Block>
       </div>
@@ -388,31 +540,40 @@ export default function CreateDelegation() {
 
         <div className="mt-4 space-y-3 text-sm">
           <PreviewRow label="Beneficiary">
-            {recipientValid ? <Mono className="text-xs text-dim">{short(recipient)}</Mono> : <span className="text-[11px] text-faint">{recipient ? 'invalid address' : 'not set'}</span>}
+            {recipientValid ? <Mono className="text-xs text-dim">{short(recipient)}</Mono> : <span className={`text-[11px] ${errs.beneficiary ? 'text-danger' : 'text-faint'}`}>{errs.beneficiary ? 'address required' : 'not set'}</span>}
           </PreviewRow>
 
           <div className="rounded-xl bg-raised ring-1 ring-line p-3">
-            <div className="text-faint text-xs">Per period</div>
+            <div className="text-faint text-xs">Charge</div>
             {amountValid ? (
-              <div className="font-mono font-bold text-ink tnum mt-0.5" style={{ fontSize: 20 }}>{amount} <span className="text-dim text-sm font-semibold">{tokenSymbol} / {period}</span></div>
+              <div className="font-mono font-bold text-ink tnum mt-0.5" style={{ fontSize: 20 }}>{trimAmount(amount)} <span className="text-dim text-sm font-semibold">{tokenSymbol} / {periodNoun(period)}</span></div>
             ) : (
-              <div className="text-sm font-semibold mt-0.5 text-faint">set an amount</div>
+              <div className={`text-sm font-semibold mt-0.5 ${errs.amount ? 'text-danger' : 'text-faint'}`}>{errs.amount ? 'amount required' : 'set a charge amount'}</div>
             )}
           </div>
 
           <PreviewRow label="Cap">
             {amountValid ? (
               <>
-                <span className="font-mono text-ink">{amount} {tokenSymbol}</span>
+                <span className="font-mono text-ink">{trimAmount(amount)} {tokenSymbol}</span>
                 <span className="text-faint text-[11px] block">resets each {periodNoun(period)}, never twice</span>
               </>
             ) : (
-              <span className="text-[11px] text-faint">set an amount</span>
+              <span className="text-[11px] text-faint">per-period cap</span>
             )}
           </PreviewRow>
 
-          <PreviewRow label="Ends">
-            {expiryEnabled && expiryDate ? <span className="text-ink text-xs">{new Date(expiryDate).toLocaleString()}</span> : <span className="text-ink">No end date</span>}
+          <PreviewRow label="Budget">
+            {boundMode === 'revocation' ? (
+              <span className="font-mono text-ink">Unlimited</span>
+            ) : capDurationSeconds > 0 && amountValid ? (
+              <>
+                <span className="font-mono text-ink">{fmt(capBudgetRaw)} {tokenSymbol}</span>
+                <span className="text-faint text-[11px] block">≈ {Math.round(periodsCount)} × {trimAmount(amount)} {tokenSymbol}, ends {dateStr(now + capDurationSeconds)}</span>
+              </>
+            ) : (
+              <span className={`text-[11px] ${errs.cap ? 'text-danger' : 'text-faint'}`}>{errs.cap ? 'cap required' : 'set an end date'}</span>
+            )}
           </PreviewRow>
 
           <PreviewRow label="Token">
@@ -421,7 +582,7 @@ export default function CreateDelegation() {
           </PreviewRow>
 
           <div className="pt-3 border-t border-line">
-            <p className="text-[11px] text-faint leading-relaxed">The exact terms the <a href="https://docs.metamask.io/smart-accounts-kit/reference/delegation/caveats#erc20periodtransfer" target="_blank" rel="noreferrer" className="text-[color:var(--accent)] hover:underline">erc20PeriodTransfer</a> caveat enforces: token, amount per period, period. The beneficiary is chosen at charge time, not by the caveat.</p>
+            <p className="text-[11px] text-faint leading-relaxed">The exact terms the <a href="https://docs.metamask.io/smart-accounts-kit/reference/delegation/caveats#erc20periodtransfer" target="_blank" rel="noreferrer" className="text-[color:var(--accent)] hover:underline">erc20PeriodTransfer</a> caveat enforces: token, amount per period, period. Total budget is the implied cap until the end date; the beneficiary is chosen at charge time, not by the caveat.</p>
             {preview && (
               <div className="mt-2">
                 <div className="flex items-center gap-1.5 text-xs text-faint"><IconHash size={12} /> Bound contract hash</div>
@@ -437,8 +598,8 @@ export default function CreateDelegation() {
               <div className="flex items-center gap-2 text-xs text-dim">
                 <IconCube size={14} style={{ color: 'var(--accent)' }} /> Pinned to IPFS, hash bound to your signature.
               </div>
-              <GaslessButton size="lg" onClick={handleSign} disabled={!canSign} className="w-full">Pin &amp; sign</GaslessButton>
-              {!canSign && <p className="text-[11px] text-faint text-center">Fill the required fields to sign.</p>}
+              <GaslessButton size="lg" onClick={onSignClick} disabled={signing} className="w-full">Pin &amp; sign</GaslessButton>
+              {!ready && <p className="text-[11px] text-faint text-center">Fill the required fields to sign.</p>}
             </>
           ) : (
             <div className="space-y-3 py-1">
@@ -457,4 +618,3 @@ export default function CreateDelegation() {
     </div>
   )
 }
-
