@@ -21,7 +21,7 @@ import { saveDelegation, setDelegationIntuition, type StoredDelegation } from '.
 import { usePublishToIntuition } from '../hooks/usePublishToIntuition'
 import { OrgPicker } from '../ui/OrgPicker'
 import { orgSelectionToInput, type OrgSelection } from '../lib/orgSelection'
-import { Card, Btn, GaslessButton, USDC, Mono, CopyChip, Payee, StatusBadge } from '../ui/components'
+import { Card, Btn, GaslessButton, USDC, Mono, CopyChip, Payee } from '../ui/components'
 import { Block, Field, Segmented, Row, PreviewRow } from '../ui/form'
 import { IconCube, IconLock, IconCheck, IconExt, IconHash } from '../ui/icons'
 import { findChain, USDC_ADDRESS, rpcUrl } from '../config/supported-chains'
@@ -298,7 +298,7 @@ export default function CreateDelegation() {
   }
 
   return (
-    <div className="rise grid grid-cols-1 lg:grid-cols-[1fr_minmax(300px,360px)] gap-6 items-start">
+    <div className="rise grid grid-cols-1 lg:grid-cols-[1fr_minmax(300px,360px)] gap-6 items-stretch">
       {/* Form */}
       <div className="space-y-5">
         {error && (
@@ -382,70 +382,77 @@ export default function CreateDelegation() {
         </Block>
       </div>
 
-      {/* Live contract preview */}
-      <Card className="p-5 lg:sticky lg:top-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-xs font-semibold text-faint uppercase tracking-wide"><IconCube size={15} /> Contract preview</div>
-          {preview ? <StatusBadge status="pending" size="sm" /> : <span className="text-xs text-faint">Incomplete</span>}
-        </div>
+      {/* What the erc20PeriodTransfer caveat enforces on-chain — not a mirror of the form */}
+      <Card className="p-5 flex flex-col">
+        <div className="flex items-center gap-2 text-xs font-semibold text-faint uppercase tracking-wide"><IconLock size={15} /> Enforced on-chain</div>
 
-        {preview ? (
-          <div className="mt-4 space-y-3 text-sm">
-            <PreviewRow label="Subscriber"><Mono className="text-xs text-dim">{short(safe.safeAddress)}</Mono></PreviewRow>
-            <PreviewRow label="Payee">
-              <span className="text-ink truncate">{payeeName || 'Organization'}</span>
-              {recipientValid && <Mono className="text-[11px] text-faint block">{short(recipient)}</Mono>}
-            </PreviewRow>
-            <div className="rounded-xl bg-raised ring-1 ring-line p-3">
-              <div className="text-faint text-xs">Charges</div>
-              <div className="font-mono font-bold text-ink tnum mt-0.5" style={{ fontSize: 22 }}>
-                {amount} <span className="text-dim text-sm font-semibold">{tokenSymbol} / {period}</span>
-              </div>
-            </div>
-            <PreviewRow label={<span className="flex items-center gap-1"><IconLock size={12} /> On-chain cap</span>}>
-              <span className="font-mono text-ink">{amount} {tokenSymbol}</span>
-              <span className="text-faint text-[11px] block">resets every {period.replace('ly', '')} period</span>
-              <span className="text-faint text-[11px] block mt-1">Only token, amount and period are enforced on-chain. The payee address is set at charge time, not enforced by the caveat.</span>
-            </PreviewRow>
-            {expiryEnabled && expiryDate && (
-              <PreviewRow label="Ends"><span className="text-ink text-xs">{new Date(expiryDate).toLocaleString()}</span></PreviewRow>
+        <div className="mt-4 space-y-3 text-sm">
+          <PreviewRow label="Beneficiary">
+            {recipientValid ? <Mono className="text-xs text-dim">{short(recipient)}</Mono> : <span className="text-[11px] text-faint">{recipient ? 'invalid address' : 'not set'}</span>}
+          </PreviewRow>
+
+          <div className="rounded-xl bg-raised ring-1 ring-line p-3">
+            <div className="text-faint text-xs">Per period</div>
+            {amountValid ? (
+              <div className="font-mono font-bold text-ink tnum mt-0.5" style={{ fontSize: 20 }}>{amount} <span className="text-dim text-sm font-semibold">{tokenSymbol} / {period}</span></div>
+            ) : (
+              <div className="text-sm font-semibold mt-0.5 text-faint">set an amount</div>
             )}
-            <div className="pt-3 border-t border-line">
-              <div className="flex items-center gap-1.5 text-xs text-faint"><IconHash size={12} /> Bound contract hash</div>
-              <Mono className="text-[11px] text-dim break-all mt-1 block">{preview.termsHash}</Mono>
-              <p className="text-[11px] text-faint mt-2 leading-relaxed">This hash becomes the delegation salt — your signature commits to the exact terms above.</p>
-            </div>
           </div>
-        ) : (
-          <p className="mt-6 text-sm text-dim leading-relaxed">Fill in an amount and a valid token to preview the subscription contract that gets pinned to IPFS and bound to your signature.</p>
-        )}
 
-        {preview && (
-          <div className="mt-5 pt-4 border-t border-line space-y-3">
-            {step === 'idle' ? (
+          <PreviewRow label="Cap">
+            {amountValid ? (
               <>
-                <div className="flex items-center gap-2 text-xs text-dim">
-                  <IconCube size={14} style={{ color: 'var(--accent)' }} /> Pinned to IPFS, hash bound to your signature.
-                </div>
-                <GaslessButton size="lg" onClick={handleSign} disabled={!canSign} className="w-full">
-                  Pin & sign
-                </GaslessButton>
-                <p className="text-[11px] text-faint text-center">1 signature · </p>
+                <span className="font-mono text-ink">{amount} {tokenSymbol}</span>
+                <span className="text-faint text-[11px] block">resets each {periodNoun(period)}, never twice</span>
               </>
             ) : (
-              <div className="space-y-3 py-1">
-                <StepRow done={step === 'pinning' || step === 'signing'} active={step === 'building'} label="Building human-readable contract" />
-                <StepRow
-                  done={step === 'signing'}
-                  active={step === 'pinning'}
-                  label="Pinning to IPFS"
-                  sub={step === 'pinning' ? 'pinning…' : pinnedCid ? `CID ${short(pinnedCid)}` : undefined}
-                />
-                <StepRow active={step === 'signing'} label="Safe signature" sub={step === 'signing' ? 'waiting for signers…' : undefined} />
+              <span className="text-[11px] text-faint">set an amount</span>
+            )}
+          </PreviewRow>
+
+          <PreviewRow label="Ends">
+            {expiryEnabled && expiryDate ? <span className="text-ink text-xs">{new Date(expiryDate).toLocaleString()}</span> : <span className="text-ink">No end date</span>}
+          </PreviewRow>
+
+          <PreviewRow label="Token">
+            <span className="text-ink text-xs">{tokenSymbol}</span>
+            {tokenValid && <Mono className="text-[10px] text-faint block">{short(tokenAddress as string)}</Mono>}
+          </PreviewRow>
+
+          <div className="pt-3 border-t border-line">
+            <p className="text-[11px] text-faint leading-relaxed">The exact terms the <a href="https://docs.metamask.io/smart-accounts-kit/reference/delegation/caveats#erc20periodtransfer" target="_blank" rel="noreferrer" className="text-[color:var(--accent)] hover:underline">erc20PeriodTransfer</a> caveat enforces: token, amount per period, period. The beneficiary is chosen at charge time, not by the caveat.</p>
+            {preview && (
+              <div className="mt-2">
+                <div className="flex items-center gap-1.5 text-xs text-faint"><IconHash size={12} /> Bound contract hash</div>
+                <Mono className="text-[11px] text-dim break-all mt-1 block">{preview.termsHash}</Mono>
               </div>
             )}
           </div>
-        )}
+        </div>
+
+        <div className="mt-auto pt-4 border-t border-line space-y-3">
+          {step === 'idle' ? (
+            <>
+              <div className="flex items-center gap-2 text-xs text-dim">
+                <IconCube size={14} style={{ color: 'var(--accent)' }} /> Pinned to IPFS, hash bound to your signature.
+              </div>
+              <GaslessButton size="lg" onClick={handleSign} disabled={!canSign} className="w-full">Pin &amp; sign</GaslessButton>
+              {!canSign && <p className="text-[11px] text-faint text-center">Fill the required fields to sign.</p>}
+            </>
+          ) : (
+            <div className="space-y-3 py-1">
+              <StepRow done={step === 'pinning' || step === 'signing'} active={step === 'building'} label="Building human-readable contract" />
+              <StepRow
+                done={step === 'signing'}
+                active={step === 'pinning'}
+                label="Pinning to IPFS"
+                sub={step === 'pinning' ? 'pinning…' : pinnedCid ? `CID ${short(pinnedCid)}` : undefined}
+              />
+              <StepRow active={step === 'signing'} label="Safe signature" sub={step === 'signing' ? 'waiting for signers…' : undefined} />
+            </div>
+          )}
+        </div>
       </Card>
     </div>
   )
