@@ -1,8 +1,9 @@
-import { createPublicClient, http, parseAbiItem, type Address } from 'viem';
+import { createPublicClient, http, parseAbiItem, parseAbi, type Address, type Hex } from 'viem';
 import { mainnet } from 'viem/chains';
 import {
   ANALYTICS_RPC_URL,
   OURGLASS_ENFORCERS,
+  DELEGATION_MANAGER,
   LOOKBACK_BLOCKS,
   SCAN_CHUNK_BLOCKS,
 } from './config';
@@ -31,6 +32,7 @@ const PERIOD_EVENT = parseAbiItem(
 const STREAM_EVENT = parseAbiItem(
   'event IncreasedSpentMap(address indexed sender, address indexed redeemer, bytes32 indexed delegationHash, address token, uint256 initialAmount, uint256 maxAmount, uint256 amountPerSecond, uint256 startTime, uint256 spent, uint256 lastUpdateTimestamp)',
 );
+const DELEGATION_MANAGER_ABI = parseAbi(['function disabledDelegations(bytes32 delegationHash) view returns (bool)']);
 
 const client = createPublicClient({ chain: mainnet, transport: http(ANALYTICS_RPC_URL) });
 
@@ -221,5 +223,17 @@ export async function loadActivity(): Promise<{ charges: Charge[]; streamPositio
   }
 
   const charges = [...periodCharges(periodRows), ...streamCharges(streamRows)].sort((a, b) => a.timestamp - b.timestamp);
-  return { charges, streamPositions: [...posByHash.values()] };
+
+  // A revoked stream can no longer be claimed, so its accrued balance must not show
+  // as "streaming now" — drop disabled delegations (past charges still count toward
+  // settled, since those transfers really happened).
+  const positions = [...posByHash.values()];
+  const disabled = await Promise.all(
+    positions.map((p) =>
+      client
+        .readContract({ address: DELEGATION_MANAGER, abi: DELEGATION_MANAGER_ABI, functionName: 'disabledDelegations', args: [p.delegationHash as Hex] })
+        .catch(() => false),
+    ),
+  );
+  return { charges, streamPositions: positions.filter((_, i) => !disabled[i]) };
 }

@@ -25,6 +25,11 @@ export const OURGLASS_ENFORCERS = {
   stream: '0xE475D14d61756D6e940B74C20d2E44EB70c71a8D' as Address,
 } as const;
 
+// DelegationManager (deterministic across chains) — source of truth for whether a
+// delegation is still active. A revoked stream can no longer be claimed, so it must
+// be dropped from the live "streaming now" figure.
+export const DELEGATION_MANAGER = '0xdb9B1e94B5b69Df7e401DDbedE43491141047dB3' as Address;
+
 /** Known tokens for fast symbol/decimals resolution (skips an on-chain read). */
 export const KNOWN_TOKENS: Record<string, { symbol: string; decimals: number }> = {
   '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48': { symbol: 'USDC', decimals: 6 },
