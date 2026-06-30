@@ -3,8 +3,10 @@
 import Link from 'next/link';
 import { useAnalytics } from './useAnalytics';
 import { totals, byToken, byReceiver, byAgreement, chargesPerDay, type Group } from './aggregate';
+import { liveStats } from './live';
 import { formatAmount, formatCount, shortHex } from './format';
 import type { TokenMeta } from './tokens';
+import { LiveStats } from '../components/live-stats';
 
 function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
@@ -29,7 +31,8 @@ function groupVolume(g: Group, tokens: Map<string, TokenMeta>): string {
 }
 
 export function AnalyticsDashboard() {
-  const { loading, error, charges, tokens, refresh } = useAnalytics();
+  const { loading, error, charges, streamPositions, tokens, refresh } = useAnalytics();
+  const live = liveStats(charges, streamPositions, tokens);
 
   const header = (
     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -149,6 +152,11 @@ export function AnalyticsDashboard() {
     <section className="relative mx-auto min-h-[calc(100vh-56px)] max-w-4xl px-6 py-16 md:px-8">
       <div className="stream-edge absolute left-0 top-0 h-full w-px" aria-hidden="true" />
       {header}
+      {!error && (
+        <div className="mt-10 flex justify-center">
+          <LiveStats settled={live.settled} streamingBase={live.streamingBase} streamingRate={live.streamingRate} loaded={!loading} />
+        </div>
+      )}
       {body}
     </section>
   );

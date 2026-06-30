@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import { loadCharges, type Charge } from './events';
+import { loadActivity, type Charge, type StreamPosition } from './events';
 import { resolveTokens, type TokenMeta } from './tokens';
 
 export interface AnalyticsState {
   loading: boolean;
   error: string | null;
   charges: Charge[];
+  streamPositions: StreamPosition[];
   tokens: Map<string, TokenMeta>;
   refresh: () => void;
 }
@@ -18,6 +19,7 @@ export function useAnalytics(): AnalyticsState {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [charges, setCharges] = useState<Charge[]>([]);
+  const [streamPositions, setStreamPositions] = useState<StreamPosition[]>([]);
   const [tokens, setTokens] = useState<Map<string, TokenMeta>>(new Map());
   const [nonce, setNonce] = useState(0);
   const refresh = useCallback(() => setNonce((n) => n + 1), []);
@@ -27,10 +29,11 @@ export function useAnalytics(): AnalyticsState {
     setLoading(true);
     setError(null);
     (async () => {
-      const loaded = await loadCharges();
-      const meta = await resolveTokens(loaded.map((c) => c.token));
+      const { charges: loaded, streamPositions: positions } = await loadActivity();
+      const meta = await resolveTokens([...loaded.map((c) => c.token), ...positions.map((p) => p.token)]);
       if (!cancelled) {
         setCharges(loaded);
+        setStreamPositions(positions);
         setTokens(meta);
         setLoading(false);
       }
@@ -45,5 +48,5 @@ export function useAnalytics(): AnalyticsState {
     };
   }, [nonce]);
 
-  return { loading, error, charges, tokens, refresh };
+  return { loading, error, charges, streamPositions, tokens, refresh };
 }

@@ -1,8 +1,9 @@
-import { createPublicClient, http, parseAbiItem, type Address } from 'viem';
+import { createPublicClient, http, parseAbiItem, parseAbi, type Address, type Hex } from 'viem';
 import { mainnet } from 'viem/chains';
 import {
   ANALYTICS_RPC_URL,
   OURGLASS_ENFORCERS,
+  DELEGATION_MANAGER,
   LOOKBACK_BLOCKS,
   SCAN_CHUNK_BLOCKS,
 } from './config';
@@ -31,6 +32,7 @@ const PERIOD_EVENT = parseAbiItem(
 const STREAM_EVENT = parseAbiItem(
   'event IncreasedSpentMap(address indexed sender, address indexed redeemer, bytes32 indexed delegationHash, address token, uint256 initialAmount, uint256 maxAmount, uint256 amountPerSecond, uint256 startTime, uint256 spent, uint256 lastUpdateTimestamp)',
 );
+const DELEGATION_MANAGER_ABI = parseAbi(['function disabledDelegations(bytes32 delegationHash) view returns (bool)']);
 
 const client = createPublicClient({ chain: mainnet, transport: http(ANALYTICS_RPC_URL) });
 
@@ -146,8 +148,27 @@ function streamCharges(rows: StreamRow[]): Charge[] {
   return charges;
 }
 
-/** Load all attributable charges + claims from the OurGlass enforcer instances. */
-export async function loadCharges(): Promise<Charge[]> {
+/**
+ * The latest on-chain state of a stream delegation — enough to compute its live
+ * accruing-unclaimed balance (`min(max, initial + rate × elapsed) − spent`) and the
+ * rate at which it keeps growing. Discarded by the per-charge delta logic above, so
+ * surfaced separately for the live counter.
+ */
+export interface StreamPosition {
+  delegationHash: string;
+  token: Address;
+  initialAmount: bigint;
+  maxAmount: bigint;
+  amountPerSecond: bigint;
+  startTime: bigint;
+  spent: bigint;
+}
+
+/**
+ * Load all attributable charges + claims from the OurGlass enforcer instances, plus
+ * the latest position of each stream (one log scan, no extra requests).
+ */
+export async function loadActivity(): Promise<{ charges: Charge[]; streamPositions: StreamPosition[] }> {
   const latest = await client.getBlockNumber();
   const fromBlock = latest > LOOKBACK_BLOCKS ? latest - LOOKBACK_BLOCKS : 0n;
 
@@ -181,5 +202,38 @@ export async function loadCharges(): Promise<Charge[]> {
     txHash: l.transactionHash,
   }));
 
-  return [...periodCharges(periodRows), ...streamCharges(streamRows)].sort((a, b) => a.timestamp - b.timestamp);
+  // Keep the latest IncreasedSpentMap per delegation (by its own timestamp).
+  const posTs = new Map<string, bigint>();
+  const posByHash = new Map<string, StreamPosition>();
+  for (const l of streamLogs) {
+    const hash = l.args.delegationHash!;
+    const ts = l.args.lastUpdateTimestamp!;
+    if ((posTs.get(hash) ?? -1n) <= ts) {
+      posTs.set(hash, ts);
+      posByHash.set(hash, {
+        delegationHash: hash,
+        token: l.args.token!,
+        initialAmount: l.args.initialAmount!,
+        maxAmount: l.args.maxAmount!,
+        amountPerSecond: l.args.amountPerSecond!,
+        startTime: l.args.startTime!,
+        spent: l.args.spent!,
+      });
+    }
+  }
+
+  const charges = [...periodCharges(periodRows), ...streamCharges(streamRows)].sort((a, b) => a.timestamp - b.timestamp);
+
+  // A revoked stream can no longer be claimed, so its accrued balance must not show
+  // as "streaming now" — drop disabled delegations (past charges still count toward
+  // settled, since those transfers really happened).
+  const positions = [...posByHash.values()];
+  const disabled = await Promise.all(
+    positions.map((p) =>
+      client
+        .readContract({ address: DELEGATION_MANAGER, abi: DELEGATION_MANAGER_ABI, functionName: 'disabledDelegations', args: [p.delegationHash as Hex] })
+        .catch(() => false),
+    ),
+  );
+  return { charges, streamPositions: positions.filter((_, i) => !disabled[i]) };
 }
