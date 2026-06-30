@@ -146,8 +146,27 @@ function streamCharges(rows: StreamRow[]): Charge[] {
   return charges;
 }
 
-/** Load all attributable charges + claims from the OurGlass enforcer instances. */
-export async function loadCharges(): Promise<Charge[]> {
+/**
+ * The latest on-chain state of a stream delegation — enough to compute its live
+ * accruing-unclaimed balance (`min(max, initial + rate × elapsed) − spent`) and the
+ * rate at which it keeps growing. Discarded by the per-charge delta logic above, so
+ * surfaced separately for the live counter.
+ */
+export interface StreamPosition {
+  delegationHash: string;
+  token: Address;
+  initialAmount: bigint;
+  maxAmount: bigint;
+  amountPerSecond: bigint;
+  startTime: bigint;
+  spent: bigint;
+}
+
+/**
+ * Load all attributable charges + claims from the OurGlass enforcer instances, plus
+ * the latest position of each stream (one log scan, no extra requests).
+ */
+export async function loadActivity(): Promise<{ charges: Charge[]; streamPositions: StreamPosition[] }> {
   const latest = await client.getBlockNumber();
   const fromBlock = latest > LOOKBACK_BLOCKS ? latest - LOOKBACK_BLOCKS : 0n;
 
@@ -181,5 +200,26 @@ export async function loadCharges(): Promise<Charge[]> {
     txHash: l.transactionHash,
   }));
 
-  return [...periodCharges(periodRows), ...streamCharges(streamRows)].sort((a, b) => a.timestamp - b.timestamp);
+  // Keep the latest IncreasedSpentMap per delegation (by its own timestamp).
+  const posTs = new Map<string, bigint>();
+  const posByHash = new Map<string, StreamPosition>();
+  for (const l of streamLogs) {
+    const hash = l.args.delegationHash!;
+    const ts = l.args.lastUpdateTimestamp!;
+    if ((posTs.get(hash) ?? -1n) <= ts) {
+      posTs.set(hash, ts);
+      posByHash.set(hash, {
+        delegationHash: hash,
+        token: l.args.token!,
+        initialAmount: l.args.initialAmount!,
+        maxAmount: l.args.maxAmount!,
+        amountPerSecond: l.args.amountPerSecond!,
+        startTime: l.args.startTime!,
+        spent: l.args.spent!,
+      });
+    }
+  }
+
+  const charges = [...periodCharges(periodRows), ...streamCharges(streamRows)].sort((a, b) => a.timestamp - b.timestamp);
+  return { charges, streamPositions: [...posByHash.values()] };
 }
