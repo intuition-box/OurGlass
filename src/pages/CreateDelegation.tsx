@@ -31,7 +31,6 @@ const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
 const trimAmount = (s: string) => (s.includes('.') ? s.replace(/\.?0+$/, '') : s)
 const trimNum = (n: number) => (Number.isFinite(n) ? String(Math.round(n * 100) / 100) : '')
 const dec = (v: string) => v.replace(',', '.').replace(/[^\d.]/g, '')
-const clampDur = (v: string) => { const n = parseFloat(v); return Number.isFinite(n) && n > 999 ? '999' : v }
 const dateStr = (sec: number) => new Date(sec * 1000).toLocaleDateString()
 const toDateInput = (sec: number) => new Date(sec * 1000).toISOString().slice(0, 10)
 
@@ -103,8 +102,9 @@ export default function CreateDelegation() {
   // Block 3 — Security / limit (proportional hard cap = end date / duration / budget)
   const [boundMode, setBoundMode] = useState<BoundMode>('revocation')
   const [capDurationN, setCapDurationN] = useState('')
-  const [capDurationUnit, setCapDurationUnit] = useState('month')
   const [activeTotal, setActiveTotal] = useState<string | null>(null)
+  // Internal pivot unit for the cap; End date and Total budget both drive it.
+  const capDurationUnit = 'month'
 
   const [signing, setSigning] = useState(false)
   const [step, setStep] = useState<SignStep>('idle')
@@ -378,7 +378,6 @@ export default function CreateDelegation() {
     setTokenStatus('idle')
     setBoundMode('revocation')
     setCapDurationN('')
-    setCapDurationUnit('month')
     setActiveTotal(null)
     setError(null)
     setTouchedBene(false)
@@ -520,19 +519,10 @@ export default function CreateDelegation() {
           }
         >
           {boundMode === 'hardcap' && (
-            <div className={`mt-1 grid grid-cols-[1fr_1.35fr_1fr] rounded-xl ring-1 divide-x divide-line ${errs.cap ? 'ring-danger' : 'ring-line'}`}>
+            <div className={`mt-1 grid grid-cols-2 rounded-xl ring-1 divide-x divide-line ${errs.cap ? 'ring-danger' : 'ring-line'}`}>
               <div className="p-3">
                 <div className="text-[11px] text-faint mb-1.5 text-center uppercase tracking-wide">End date</div>
                 <input type="date" lang="en" value={capDurationSeconds > 0 ? toDateInput(now + capDurationSeconds) : ''} onChange={(e) => onEndDateChange(e.target.value)} onBlur={() => setTouchedCap(true)} className="w-full" />
-              </div>
-              <div className="p-3">
-                <div className="text-[11px] text-faint mb-1.5 text-center uppercase tracking-wide">Duration</div>
-                <div className="flex gap-1.5">
-                  <input type="text" inputMode="decimal" placeholder="6" value={capDurationN} onChange={(e) => setCapDurationN(clampDur(dec(e.target.value)))} onBlur={() => setTouchedCap(true)} className="flex-1 min-w-0 w-0" />
-                  <select value={capDurationUnit} onChange={(e) => setCapDurationUnit(e.target.value)} className="flex-1 min-w-0 w-0 px-1 truncate">
-                    {DURATION_UNITS.map((u) => <option key={u.key} value={u.key}>{u.label}</option>)}
-                  </select>
-                </div>
               </div>
               <div className="p-3">
                 <div className="text-[11px] text-faint mb-1.5 text-center uppercase tracking-wide">Total budget</div>
