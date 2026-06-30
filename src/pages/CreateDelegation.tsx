@@ -24,7 +24,8 @@ import { orgSelectionToInput, type OrgSelection } from '../lib/orgSelection'
 import { Card, Btn, GaslessButton, USDC, Mono, CopyChip, Payee } from '../ui/components'
 import { Block, Field, Segmented, Row, PreviewRow } from '../ui/form'
 import { IconCube, IconLock, IconCheck, IconExt, IconHash } from '../ui/icons'
-import { findChain, USDC_ADDRESS, rpcUrl } from '../config/supported-chains'
+import { findChain, USDC_ADDRESS, rpcUrl, chainName } from '../config/supported-chains'
+import { readErc20Meta } from '../lib/erc20'
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
 const trimAmount = (s: string) => (s.includes('.') ? s.replace(/\.?0+$/, '') : s)
@@ -92,7 +93,8 @@ export default function CreateDelegation() {
   // Block 2 — Payment details
   const [useCustomToken, setUseCustomToken] = useState(false)
   const [customToken, setCustomToken] = useState('')
-  const [customDecimals, setCustomDecimals] = useState(6)
+  const [tokenMeta, setTokenMeta] = useState<{ name: string; symbol: string; decimals: number } | null>(null)
+  const [tokenStatus, setTokenStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle')
   const [amount, setAmount] = useState('')
   const [period, setPeriod] = useState<PeriodType>('monthly')
   const amountRef = useRef<HTMLInputElement>(null)
@@ -128,13 +130,33 @@ export default function CreateDelegation() {
     }
   }, [signed, intuitionStatus])
 
+  // Resolve a custom token's name / symbol / decimals straight from the contract
+  // (read-only — never a manual decimals field).
+  useEffect(() => {
+    if (!useCustomToken || !isAddress(customToken)) { setTokenMeta(null); setTokenStatus('idle'); return }
+    const chain = findChain(safe.chainId)
+    if (!chain) { setTokenStatus('error'); return }
+    const client = createPublicClient({ chain, transport: http(rpcUrl(safe.chainId)) })
+    let cancelled = false
+    setTokenStatus('loading')
+    ;(async () => {
+      try {
+        const meta = await readErc20Meta(client, customToken as Address)
+        if (!cancelled) { setTokenMeta(meta); setTokenStatus('ok') }
+      } catch {
+        if (!cancelled) { setTokenMeta(null); setTokenStatus('error') }
+      }
+    })()
+    return () => { cancelled = true }
+  }, [useCustomToken, customToken, safe.chainId])
+
   const defaultUsdc = USDC_ADDRESS[safe.chainId]
   const tokenAddress = useCustomToken ? customToken : defaultUsdc
-  const decimals = useCustomToken ? customDecimals : 6
-  const tokenSymbol = useCustomToken ? 'tokens' : 'USDC'
+  const decimals = useCustomToken ? (tokenMeta?.decimals ?? 6) : 6
+  const tokenSymbol = useCustomToken ? (tokenMeta?.symbol ?? 'tokens') : 'USDC'
 
   const recipientValid = isAddress(recipient)
-  const tokenValid = !!tokenAddress && isAddress(tokenAddress)
+  const tokenValid = useCustomToken ? (isAddress(customToken) && tokenStatus === 'ok') : (!!tokenAddress && isAddress(tokenAddress))
   const periodSeconds = Number(periodToSeconds(period))
 
   const fmt = (raw: bigint) => trimAmount(formatUnits(raw, decimals))
@@ -142,19 +164,6 @@ export default function CreateDelegation() {
     try { return amount ? parseUnits(amount, decimals) : 0n } catch { return 0n }
   }, [amount, decimals])
   const amountValid = amountRaw > 0n && tokenValid
-
-  // ---- Charge-rate table: cells interlink on the EXACT entered amount ----
-  function rateCellValue(p: PeriodType) {
-    if (p === period) return amount
-    if (!amount) return ''
-    try {
-      return trimAmount(formatUnits((amountRaw * periodToSeconds(p)) / periodToSeconds(period), decimals))
-    } catch { return '' }
-  }
-  function onRateChange(p: PeriodType, raw: string) {
-    setPeriod(p)
-    setAmount(dec(raw))
-  }
 
   // ---- Hard-cap table (pivot = capDurationSeconds). Budget = amount × periods. ----
   const capDurationSeconds = useMemo(() => {
@@ -365,6 +374,8 @@ export default function CreateDelegation() {
     setPeriod('monthly')
     setUseCustomToken(false)
     setCustomToken('')
+    setTokenMeta(null)
+    setTokenStatus('idle')
     setBoundMode('revocation')
     setCapDurationN('')
     setCapDurationUnit('month')
@@ -462,37 +473,38 @@ export default function CreateDelegation() {
             />
           }
         >
-          {!useCustomToken && (
+          {useCustomToken ? (
+            <div>
+              <input type="text" placeholder="Token 0x…" value={customToken} onChange={(e) => setCustomToken(e.target.value)} />
+              {tokenStatus === 'loading' && <p className="text-xs text-faint mt-1">Resolving token…</p>}
+              {tokenStatus === 'ok' && tokenMeta && (
+                <p className="text-xs text-faint mt-1"><span className="text-ink font-semibold">{tokenMeta.symbol}</span> · {tokenMeta.name} · {tokenMeta.decimals} decimals</p>
+              )}
+              {tokenStatus === 'error' && customToken && <p className="text-xs text-danger mt-1">Not a readable ERC-20 on {chainName(safe.chainId)} — make sure the token is deployed on this chain.</p>}
+            </div>
+          ) : (
             <p className="text-xs text-faint"><span className="text-ink font-semibold">USDC</span> · USD Coin · 6 decimals</p>
           )}
-          {useCustomToken && (
-            <div className="grid grid-cols-[1fr_88px] gap-2">
-              <input type="text" placeholder="Token 0x…" value={customToken} onChange={(e) => setCustomToken(e.target.value)} />
-              <input type="number" placeholder="6" value={customDecimals} onChange={(e) => setCustomDecimals(parseInt(e.target.value) || 6)} min={0} max={24} />
-            </div>
-          )}
 
-          <Field label="Charge rate" required missing={errs.amount}>
-            <div className="grid grid-cols-4 gap-2">
-              {PERIOD_SCALES.map((s, i) => (
-                <div key={s.key}>
-                  <div className="text-[11px] text-faint mb-1">{s.label}</div>
-                  <div className="relative">
-                    <input
-                      ref={i === 0 ? amountRef : undefined}
-                      type="text" inputMode="decimal" placeholder="0"
-                      value={rateCellValue(s.key)}
-                      onChange={(e) => onRateChange(s.key, e.target.value)}
-                      onFocus={(e) => { e.target.select(); setRateHint(false) }}
-                      onBlur={() => setTouchedAmount(true)}
-                      className={`pr-9 ${errs.amount ? 'ring-1 ring-danger' : ''}`}
-                    />
-                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-faint">{tokenSymbol}</span>
-                  </div>
-                </div>
-              ))}
+          <Field label="Cap per period" required missing={errs.amount} hint="The most that can be charged in one period. It resets each period — unused amounts don't roll over.">
+            <div className="grid grid-cols-[1fr_140px] gap-2">
+              <div className="relative">
+                <input
+                  ref={amountRef}
+                  type="text" inputMode="decimal" placeholder="100"
+                  value={amount}
+                  onChange={(e) => setAmount(dec(e.target.value))}
+                  onFocus={(e) => { e.target.select(); setRateHint(false) }}
+                  onBlur={() => setTouchedAmount(true)}
+                  className={`pr-12 ${errs.amount ? 'ring-1 ring-danger' : ''}`}
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">{tokenSymbol}</span>
+              </div>
+              <select value={period} onChange={(e) => setPeriod(e.target.value as PeriodType)} className="px-2">
+                {PERIOD_SCALES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+              </select>
             </div>
-            {rateHint && <p className="text-xs text-pending mt-2">Set a charge amount first to fix a limit.</p>}
+            {rateHint && <p className="text-xs text-pending mt-2">Set a cap first to fix a limit.</p>}
           </Field>
         </Block>
 
