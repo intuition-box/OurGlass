@@ -22,7 +22,8 @@ import { usePublishToIntuition } from '../hooks/usePublishToIntuition'
 import { OrgPicker } from '../ui/OrgPicker'
 import { orgSelectionToInput, type OrgSelection } from '../lib/orgSelection'
 import { Card, Btn, GaslessButton, USDC, Mono, CopyChip, Payee, StatusBadge } from '../ui/components'
-import { IconCube, IconLock, IconCheck, IconExt, IconHash, IconCal } from '../ui/icons'
+import { Block, Field, Segmented, Row, PreviewRow } from '../ui/form'
+import { IconCube, IconLock, IconCheck, IconExt, IconHash } from '../ui/icons'
 import { findChain, USDC_ADDRESS, rpcUrl } from '../config/supported-chains'
 
 const PERIODS: PeriodType[] = ['minutely', 'daily', 'weekly', 'monthly']
@@ -299,31 +300,54 @@ export default function CreateDelegation() {
   return (
     <div className="rise grid grid-cols-1 lg:grid-cols-[1fr_minmax(300px,360px)] gap-6 items-start">
       {/* Form */}
-      <div>
-        <h1 className="text-2xl font-extrabold tracking-tight text-ink">New subscription</h1>
-        <p className="text-dim text-sm mt-1">Sign once. The biller charges it every period, capped on-chain.</p>
-
+      <div className="space-y-5">
         {error && (
-          <div className="mt-4 rounded-xl px-3 py-2 text-sm text-danger" style={{ background: 'rgba(251,113,133,.10)', boxShadow: 'inset 0 0 0 1px rgba(251,113,133,.30)' }}>
+          <div className="rounded-xl px-3 py-2 text-sm text-danger" style={{ background: 'rgba(251,113,133,.10)', boxShadow: 'inset 0 0 0 1px rgba(251,113,133,.30)' }}>
             {error}
           </div>
         )}
 
-        <Card className="p-5 mt-5 space-y-5">
-          <Field label="Payee name" hint="Shown in your subscriptions list. Optional.">
-            <input type="text" placeholder="Acme Inc." value={payeeName} onChange={(e) => setPayeeName(e.target.value)} />
-          </Field>
+        {/* Block 0 — Sender (this Safe and the org that owns it) */}
+        <Block title="Sender">
           <Field label="Organization" hint="The org that owns this Safe — reuse one from Intuition or create it. Recorded as “org owns Safe”. Optional.">
             <OrgPicker safeAddress={safe.safeAddress as Address} safeChainId={safe.chainId} value={org} onChange={setOrg} />
           </Field>
+        </Block>
 
-          <Field label="Payee address" hint="The account allowed to charge (the delegate) and where funds are paid. Direct redeem — no relayer.">
-            <input type="text" placeholder="0x…" value={recipient} onChange={(e) => setRecipient(e.target.value)} />
+        {/* Block 1 — Beneficiary */}
+        <Block title="Beneficiary">
+          <Field label="Name" hint="Shown in your subscriptions list. Optional.">
+            <input type="text" placeholder="Acme Inc." value={payeeName} onChange={(e) => setPayeeName(e.target.value)} />
+          </Field>
+          <Field label="Address" required missing={!!recipient && !recipientValid}>
+            <input type="text" placeholder="0x…" value={recipient} onChange={(e) => setRecipient(e.target.value)} className={recipient && !recipientValid ? 'ring-1 ring-danger' : ''} />
             {recipient && !recipientValid && <p className="text-xs text-danger mt-1">Invalid address</p>}
           </Field>
+        </Block>
+
+        {/* Block 2 — Payment details */}
+        <Block
+          title="Payment details"
+          action={
+            <Segmented
+              value={useCustomToken}
+              onChange={setUseCustomToken}
+              options={[{ key: false, label: <USDC size={15} /> }, { key: true, label: 'Custom ERC-20' }]}
+            />
+          }
+        >
+          {!useCustomToken && (
+            <p className="text-xs text-faint"><span className="text-ink font-semibold">USDC</span> · USD Coin · 6 decimals</p>
+          )}
+          {useCustomToken && (
+            <div className="grid grid-cols-[1fr_88px] gap-2">
+              <input type="text" placeholder="Token 0x…" value={customToken} onChange={(e) => setCustomToken(e.target.value)} />
+              <input type="number" placeholder="6" value={customDecimals} onChange={(e) => setCustomDecimals(parseInt(e.target.value) || 6)} min={0} max={24} />
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Amount per period">
+            <Field label="Amount per period" required missing={!!amount && !amountValid}>
               <div className="relative">
                 <input type="number" placeholder="10" value={amount} onChange={(e) => setAmount(e.target.value)} min={0} step="any" className="pr-16" />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">{tokenSymbol}</span>
@@ -335,41 +359,27 @@ export default function CreateDelegation() {
               </select>
             </Field>
           </div>
+        </Block>
 
-          <Field label="Token">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setUseCustomToken(false)}
-                className={`flex-1 h-11 rounded-xl text-sm font-medium inline-flex items-center justify-center gap-2 transition ${!useCustomToken ? 'bg-raised text-ink ring-1 ring-line2' : 'text-dim hover:text-ink'}`}
-              >
-                <USDC size={15} />
-              </button>
-              <button
-                type="button"
-                onClick={() => setUseCustomToken(true)}
-                className={`flex-1 h-11 rounded-xl text-sm font-medium transition ${useCustomToken ? 'bg-raised text-ink ring-1 ring-line2' : 'text-dim hover:text-ink'}`}
-              >
-                Custom ERC-20
-              </button>
-            </div>
-            {!useCustomToken && defaultUsdc && <p className="text-xs text-faint font-mono mt-2 truncate">{defaultUsdc}</p>}
-            {useCustomToken && (
-              <div className="grid grid-cols-[1fr_88px] gap-2 mt-2">
-                <input type="text" placeholder="Token 0x…" value={customToken} onChange={(e) => setCustomToken(e.target.value)} />
-                <input type="number" placeholder="6" value={customDecimals} onChange={(e) => setCustomDecimals(parseInt(e.target.value) || 6)} min={0} max={24} />
-              </div>
-            )}
-          </Field>
-
-          <div>
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input type="checkbox" checked={expiryEnabled} onChange={(e) => setExpiryEnabled(e.target.checked)} />
-              <span className="text-sm text-dim flex items-center gap-1.5"><IconCal size={14} /> Set an end date</span>
-            </label>
-            {expiryEnabled && <input type="datetime-local" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} className="mt-2" />}
-          </div>
-        </Card>
+        {/* Block 3 — Security / limit */}
+        <Block
+          title="Security / limit"
+          action={
+            <Segmented
+              value={expiryEnabled ? 'enddate' : 'revocation'}
+              onChange={(v) => setExpiryEnabled(v === 'enddate')}
+              options={[{ key: 'revocation', label: 'Revocation only' }, { key: 'enddate', label: 'End date' }]}
+            />
+          }
+        >
+          {expiryEnabled ? (
+            <Field label="End date" hint="After this date the subscription can no longer be charged.">
+              <input type="datetime-local" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} className="w-full" />
+            </Field>
+          ) : (
+            <p className="text-xs text-faint">No end date — the subscription runs until you revoke it. The per-period cap is always enforced on-chain.</p>
+          )}
+        </Block>
       </div>
 
       {/* Live contract preview */}
@@ -441,30 +451,3 @@ export default function CreateDelegation() {
   )
 }
 
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <label className="text-sm font-medium text-ink block mb-1.5">{label}</label>
-      {children}
-      {hint && <p className="text-xs text-faint mt-1">{hint}</p>}
-    </div>
-  )
-}
-
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-center justify-between gap-4 px-4 py-3">
-      <span className="text-sm text-faint">{label}</span>
-      <div className="text-right min-w-0">{children}</div>
-    </div>
-  )
-}
-
-function PreviewRow({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <div className="flex items-start justify-between gap-3">
-      <span className="text-xs text-faint mt-0.5">{label}</span>
-      <div className="text-right min-w-0">{children}</div>
-    </div>
-  )
-}
