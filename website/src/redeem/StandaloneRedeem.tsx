@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from 'react'
 import { createPublicClient, http, isAddress, erc20Abi, formatUnits, type Address, type PublicClient, type WalletClient } from 'viem'
-import { useAccount, useWalletClient, useConnect } from 'wagmi'
+import { useAccount, useWalletClient, useConnect, useSwitchChain } from 'wagmi'
 import { importDelegationsJson, type StoredDelegation } from './lib/storage'
 import { useIncomingDelegations } from './hooks/useIncomingDelegations'
 import { ipfsToHttp } from './lib/subscriptionTerms'
@@ -48,6 +48,7 @@ export function StandaloneRedeem() {
   const { address, isConnected, chainId: walletChainId } = useAccount()
   const { data: walletClient } = useWalletClient()
   const { connect, connectors } = useConnect()
+  const { switchChain, isPending: switching } = useSwitchChain()
   const incoming = useIncomingDelegations()
 
   function connectWallet() {
@@ -304,7 +305,16 @@ export function StandaloneRedeem() {
               {isDelegate && wrongChain && (
                 <div className="mt-4 rounded-xl px-3 py-3 text-xs leading-relaxed" style={{ background: 'rgba(251,191,36,.08)', boxShadow: 'inset 0 0 0 1px rgba(251,191,36,.25)', color: '#FBBF24' }}>
                   <div className="flex items-center gap-1.5 font-semibold mb-1"><IconAlert size={13} /> Wrong network</div>
-                  Switch your wallet to {chainName(chainId)} to redeem.
+                  <p>This delegation lives on {chainName(chainId)}. Switch your wallet to redeem.</p>
+                  <button
+                    type="button"
+                    onClick={() => switchChain({ chainId })}
+                    disabled={switching}
+                    className="mt-2 inline-flex h-8 items-center rounded-lg px-3 text-xs font-semibold transition disabled:opacity-60"
+                    style={{ background: 'rgba(251,191,36,.16)', boxShadow: 'inset 0 0 0 1px rgba(251,191,36,.4)', color: '#FBBF24' }}
+                  >
+                    {switching ? 'Switching…' : `Switch to ${chainName(chainId)}`}
+                  </button>
                 </div>
               )}
               {error && (
