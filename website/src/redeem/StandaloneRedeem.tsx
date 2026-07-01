@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from 'react'
 import { createPublicClient, http, isAddress, erc20Abi, formatUnits, type Address, type PublicClient, type WalletClient } from 'viem'
-import { useAccount, useWalletClient, useConnect } from 'wagmi'
+import { useAccount, useWalletClient, useConnect, useSwitchChain } from 'wagmi'
 import { importDelegationsJson, type StoredDelegation } from './lib/storage'
 import { useIncomingDelegations } from './hooks/useIncomingDelegations'
 import { ipfsToHttp } from './lib/subscriptionTerms'
@@ -12,6 +12,8 @@ import { MAX_UINT256 } from './lib/streamRate'
 import { useClaimState } from './hooks/useClaimState'
 import { ClaimProgress } from './ui/ClaimProgress'
 import { AnimatedAmount } from './ui/AnimatedAmount'
+import { ErrorNotice } from './ui/ErrorNotice'
+import { toUserError, validationError, type UserError } from './lib/errors'
 import { SELECTABLE_CHAINS, findChain, chainName, explorerTx, rpcUrl } from './config/supported-chains'
 import { Card, Btn, StatusBadge, Payee, Mono } from './ui/components'
 import { IconCheck, IconExt, IconAlert, IconLock, IconRepeat, IconDoc, IconCube, IconArrowL } from './ui/icons'
@@ -33,7 +35,7 @@ export function StandaloneRedeem() {
   const [sub, setSub] = useState<StoredDelegation | null>(null)
   const [recipient, setRecipient] = useState('')
   const [charging, setCharging] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<UserError | null>(null)
   const [txHash, setTxHash] = useState<string | null>(null)
   const [chargedAmount, setChargedAmount] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
@@ -48,6 +50,7 @@ export function StandaloneRedeem() {
   const { address, isConnected, chainId: walletChainId } = useAccount()
   const { data: walletClient } = useWalletClient()
   const { connect, connectors } = useConnect()
+  const { switchChain, isPending: switching } = useSwitchChain()
   const incoming = useIncomingDelegations()
 
   function connectWallet() {
@@ -75,9 +78,9 @@ export function StandaloneRedeem() {
       setSub(parsed)
       setRecipient(parsed.meta.recipient ?? '')
       if (parsed.meta.chainId && SELECTABLE_CHAINS.some((c) => c.id === parsed.meta.chainId)) setChainId(parsed.meta.chainId)
-    } catch (err) {
+    } catch {
       setSub(null)
-      setError(err instanceof Error ? err.message : 'Invalid delegation JSON')
+      setError(validationError('Invalid delegation', 'Paste the full delegation JSON, including its meta and delegation fields.'))
     }
   }
 
@@ -98,12 +101,12 @@ export function StandaloneRedeem() {
 
   async function handleRedeem() {
     if (!sub) return
-    if (!walletClient) return setError('Connect your wallet first.')
+    if (!walletClient) return setError(validationError('Connect your wallet first', 'Connect the payee wallet to redeem.'))
     if (address?.toLowerCase() !== sub.delegation.delegate.toLowerCase())
-      return setError('Connected wallet must be the payee (delegate) of this subscription.')
-    if (walletChainId !== chainId) return setError(`Switch your wallet to ${chainName(chainId)}.`)
-    if (!isAddress(recipient)) return setError('Enter a valid recipient address.')
-    if (liveAmountRef.current <= 0n) return setError('Nothing to claim yet.')
+      return setError(validationError('Wrong wallet', 'Only the payee (delegate) can redeem this delegation.'))
+    if (walletChainId !== chainId) return setError(validationError('Wrong network', `Switch your wallet to ${chainName(chainId)} and retry.`))
+    if (!isAddress(recipient)) return setError(validationError('Invalid recipient address', 'Enter a valid 0x… address to pay to.'))
+    if (liveAmountRef.current <= 0n) return setError(validationError('Nothing to claim yet', 'The claimable amount is zero right now.'))
     setCharging(true)
     setError(null)
     try {
@@ -152,7 +155,7 @@ export function StandaloneRedeem() {
       setChargedAmount(amountStr)
       setTxHash(hash)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Redeem failed')
+      setError(toUserError(err, 'redeem'))
     } finally {
       setCharging(false)
     }
@@ -250,9 +253,7 @@ export function StandaloneRedeem() {
                     <textarea id="redeem-json" value={jsonInput} onChange={(e) => setJsonInput(e.target.value)} rows={6} placeholder='{"delegation": {…}, "meta": {…}}' className="font-mono text-xs" />
                     <div className="mt-2"><Btn kind="secondary" onClick={() => parse(jsonInput)} disabled={!jsonInput.trim()}>Load subscription</Btn></div>
                   </div>
-                  {error && (
-                    <div className="rounded-xl px-3 py-2 text-sm text-danger flex items-center gap-2" style={{ background: 'rgba(251,113,133,.10)', boxShadow: 'inset 0 0 0 1px rgba(251,113,133,.30)' }}><IconAlert size={15} /> {error}</div>
-                  )}
+                  {error && <ErrorNotice error={error} />}
                 </Card>
                 <div className="text-center pt-1">
                   <button onClick={() => setMode('auto')} className="text-xs text-faint hover:text-dim transition">Back to my delegations</button>
@@ -304,12 +305,19 @@ export function StandaloneRedeem() {
               {isDelegate && wrongChain && (
                 <div className="mt-4 rounded-xl px-3 py-3 text-xs leading-relaxed" style={{ background: 'rgba(251,191,36,.08)', boxShadow: 'inset 0 0 0 1px rgba(251,191,36,.25)', color: '#FBBF24' }}>
                   <div className="flex items-center gap-1.5 font-semibold mb-1"><IconAlert size={13} /> Wrong network</div>
-                  Switch your wallet to {chainName(chainId)} to redeem.
+                  <p>This delegation lives on {chainName(chainId)}. Switch your wallet to redeem.</p>
+                  <button
+                    type="button"
+                    onClick={() => switchChain({ chainId })}
+                    disabled={switching}
+                    className="mt-2 inline-flex h-8 items-center rounded-lg px-3 text-xs font-semibold transition disabled:opacity-60"
+                    style={{ background: 'rgba(251,191,36,.16)', boxShadow: 'inset 0 0 0 1px rgba(251,191,36,.4)', color: '#FBBF24' }}
+                  >
+                    {switching ? 'Switching…' : `Switch to ${chainName(chainId)}`}
+                  </button>
                 </div>
               )}
-              {error && (
-                <div className="mt-4 rounded-xl px-3 py-2 text-sm text-danger flex items-center gap-2" style={{ background: 'rgba(251,113,133,.10)', boxShadow: 'inset 0 0 0 1px rgba(251,113,133,.30)' }}><IconAlert size={15} /> {error}</div>
-              )}
+              {error && <ErrorNotice error={error} />}
 
               <div className="mt-5 space-y-4">
                 <div>
