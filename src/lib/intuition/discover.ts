@@ -14,7 +14,7 @@ import { findChain, rpcUrl } from '../../config/supported-chains'
 import { computeDelegationHash, type DelegationStruct } from '../delegations'
 import { ipfsToHttp } from '../subscriptionTerms'
 import type { StoredDelegation } from '../storage'
-import type { IntuitionNetwork } from './network'
+import { resolveIntuitionNetwork, type IntuitionNetwork } from './network'
 
 /**
  * Read side of the Intuition integration for the Safe App: discover delegations
@@ -44,10 +44,6 @@ const READ: Record<IntuitionNetwork, ReadConfig> = {
     delegateTo: '0xb56980d42a3b03455bf41ea20fe04ae223fca0b9e688994dc661414e81e6433b',
     inContextOf: '0x892054b01d389bfe566166120470f572a56e3d4cd88c599b52c4708949625390',
   },
-}
-
-function activeNetwork(): IntuitionNetwork {
-  return import.meta.env.VITE_INTUITION_NETWORK === 'mainnet' ? 'mainnet' : 'testnet'
 }
 
 export function caip10Uri(chainId: number, address: Address): string {
@@ -247,7 +243,7 @@ export async function discoverIncomingDelegations(
   recipient: Address,
   recipientChainId: number,
 ): Promise<StoredDelegation[]> {
-  const cfg = READ[activeNetwork()]
+  const cfg = READ[resolveIntuitionNetwork()]
   if (!cfg.delegateTo || !cfg.inContextOf) return [] // predicates not yet on this graph
 
   const recipientData = caip10Uri(recipientChainId, recipient)
