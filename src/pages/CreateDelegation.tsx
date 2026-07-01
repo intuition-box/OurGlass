@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSafeAppsSDK } from '@safe-global/safe-apps-react-sdk'
-import { createPublicClient, http, isAddress, parseUnits, type Address, type Hex } from 'viem'
+import { createPublicClient, http, isAddress, parseUnits, formatUnits, type Address, type Hex } from 'viem'
 import { createDelegation } from '@metamask/smart-accounts-kit'
 import { DeleGatorModuleFactoryABI } from '../config/abis'
 import { getAddresses } from '../config/addresses'
@@ -21,14 +21,38 @@ import { saveDelegation, setDelegationIntuition, type StoredDelegation } from '.
 import { usePublishToIntuition } from '../hooks/usePublishToIntuition'
 import { OrgPicker } from '../ui/OrgPicker'
 import { orgSelectionToInput, type OrgSelection } from '../lib/orgSelection'
-import { Card, Btn, GaslessButton, USDC, Mono, CopyChip, Payee, StatusBadge } from '../ui/components'
-import { IconCube, IconLock, IconCheck, IconExt, IconHash, IconCal } from '../ui/icons'
-import { findChain, USDC_ADDRESS, rpcUrl } from '../config/supported-chains'
+import { Card, Btn, GaslessButton, USDC, Mono, CopyChip, Payee } from '../ui/components'
+import { Block, Field, Segmented, Row, PreviewRow } from '../ui/form'
+import { IconCube, IconLock, IconCheck, IconExt, IconHash } from '../ui/icons'
+import { findChain, USDC_ADDRESS, rpcUrl, chainName } from '../config/supported-chains'
+import { readErc20Meta } from '../lib/erc20'
 
-const PERIODS: PeriodType[] = ['minutely', 'daily', 'weekly', 'monthly']
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
+const trimAmount = (s: string) => (s.includes('.') ? s.replace(/\.?0+$/, '') : s)
+const trimNum = (n: number) => (Number.isFinite(n) ? String(Math.round(n * 100) / 100) : '')
+const dec = (v: string) => v.replace(',', '.').replace(/[^\d.]/g, '')
+const dateStr = (sec: number) => new Date(sec * 1000).toLocaleDateString()
+const toDateInput = (sec: number) => new Date(sec * 1000).toISOString().slice(0, 10)
+
+// The four charge periods, shown as an interlinked table — editing any cell sets
+// the subscription period and the per-period amount; the others reflect the same
+// charge rate proportionally (display only).
+const PERIOD_SCALES: { key: PeriodType; label: string }[] = [
+  { key: 'weekly', label: 'Weekly' },
+  { key: 'biweekly', label: 'Bi-weekly' },
+  { key: 'monthly', label: 'Monthly' },
+  { key: 'yearly', label: 'Yearly' },
+]
+
+const DURATION_UNITS = [
+  { key: 'year', label: 'years', seconds: 31_104_000 },
+  { key: 'month', label: 'months', seconds: 2_592_000 },
+  { key: 'week', label: 'weeks', seconds: 604_800 },
+  { key: 'day', label: 'days', seconds: 86_400 },
+]
 
 type SignStep = 'idle' | 'building' | 'pinning' | 'signing'
+type BoundMode = 'revocation' | 'hardcap'
 
 function StepRow({ done, active, label, sub }: { done?: boolean; active?: boolean; label: string; sub?: string }) {
   return (
@@ -60,22 +84,37 @@ function StepRow({ done, active, label, sub }: { done?: boolean; active?: boolea
 export default function CreateDelegation() {
   const { sdk, safe } = useSafeAppsSDK()
 
+  // Block 0/1 — Sender + Beneficiary
   const [payeeName, setPayeeName] = useState('')
   const [org, setOrg] = useState<OrgSelection>(null)
   const [recipient, setRecipient] = useState('')
-  const [amount, setAmount] = useState('')
-  const [period, setPeriod] = useState<PeriodType>('monthly')
+
+  // Block 2 — Payment details
   const [useCustomToken, setUseCustomToken] = useState(false)
   const [customToken, setCustomToken] = useState('')
-  const [customDecimals, setCustomDecimals] = useState(6)
-  const [expiryEnabled, setExpiryEnabled] = useState(false)
-  const [expiryDate, setExpiryDate] = useState('')
+  const [tokenMeta, setTokenMeta] = useState<{ name: string; symbol: string; decimals: number } | null>(null)
+  const [tokenStatus, setTokenStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle')
+  const [amount, setAmount] = useState('')
+  const [period, setPeriod] = useState<PeriodType>('monthly')
+  const amountRef = useRef<HTMLInputElement>(null)
+  const [rateHint, setRateHint] = useState(false)
+
+  // Block 3 — Security / limit (proportional hard cap = end date / duration / budget)
+  const [boundMode, setBoundMode] = useState<BoundMode>('revocation')
+  const [capDurationN, setCapDurationN] = useState('')
+  const [activeTotal, setActiveTotal] = useState<string | null>(null)
+  // Internal pivot unit for the cap; End date and Total budget both drive it.
+  const capDurationUnit = 'month'
 
   const [signing, setSigning] = useState(false)
   const [step, setStep] = useState<SignStep>('idle')
   const [pinnedCid, setPinnedCid] = useState<string | null>(null)
   const [signed, setSigned] = useState<StoredDelegation | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // A required field turns red only once touched (focused then left) and still invalid.
+  const [touchedBene, setTouchedBene] = useState(false)
+  const [touchedAmount, setTouchedAmount] = useState(false)
+  const [touchedCap, setTouchedCap] = useState(false)
 
   const { publish: publishToIntuition, status: intuitionStatus, enabled: intuitionEnabled } =
     usePublishToIntuition()
@@ -91,35 +130,122 @@ export default function CreateDelegation() {
     }
   }, [signed, intuitionStatus])
 
+  // Resolve a custom token's name / symbol / decimals straight from the contract
+  // (read-only — never a manual decimals field).
+  useEffect(() => {
+    if (!useCustomToken || !isAddress(customToken)) { setTokenMeta(null); setTokenStatus('idle'); return }
+    const chain = findChain(safe.chainId)
+    if (!chain) { setTokenStatus('error'); return }
+    const client = createPublicClient({ chain, transport: http(rpcUrl(safe.chainId)) })
+    let cancelled = false
+    setTokenStatus('loading')
+    ;(async () => {
+      try {
+        const meta = await readErc20Meta(client, customToken as Address)
+        if (!cancelled) { setTokenMeta(meta); setTokenStatus('ok') }
+      } catch {
+        if (!cancelled) { setTokenMeta(null); setTokenStatus('error') }
+      }
+    })()
+    return () => { cancelled = true }
+  }, [useCustomToken, customToken, safe.chainId])
+
   const defaultUsdc = USDC_ADDRESS[safe.chainId]
   const tokenAddress = useCustomToken ? customToken : defaultUsdc
-  const tokenDecimals = useCustomToken ? customDecimals : 6
-  const tokenSymbol = useCustomToken ? 'tokens' : 'USDC'
+  const decimals = useCustomToken ? (tokenMeta?.decimals ?? 6) : 6
+  const tokenSymbol = useCustomToken ? (tokenMeta?.symbol ?? 'tokens') : 'USDC'
 
-  const amountValid = !!amount && parseFloat(amount) > 0
   const recipientValid = isAddress(recipient)
-  const tokenValid = !!tokenAddress && isAddress(tokenAddress)
-  const expiryValid = !expiryEnabled || !!expiryDate
-  const canSign = amountValid && recipientValid && tokenValid && expiryValid && !signing
+  const tokenValid = useCustomToken ? (isAddress(customToken) && tokenStatus === 'ok') : (!!tokenAddress && isAddress(tokenAddress))
+  const periodSeconds = Number(periodToSeconds(period))
+
+  const fmt = (raw: bigint) => trimAmount(formatUnits(raw, decimals))
+  const amountRaw = useMemo<bigint>(() => {
+    try { return amount ? parseUnits(amount, decimals) : 0n } catch { return 0n }
+  }, [amount, decimals])
+  const amountValid = amountRaw > 0n && tokenValid
+
+  // ---- Hard-cap table (pivot = capDurationSeconds). Budget = amount × periods. ----
+  const capDurationSeconds = useMemo(() => {
+    const u = DURATION_UNITS.find((d) => d.key === capDurationUnit)
+    const n = parseFloat(capDurationN)
+    return u && n > 0 ? Math.round(n * u.seconds) : 0
+  }, [capDurationN, capDurationUnit])
+
+  const capBudgetRaw = useMemo<bigint>(
+    () => (amountRaw > 0n && periodSeconds > 0 ? (amountRaw * BigInt(capDurationSeconds)) / BigInt(periodSeconds) : 0n),
+    [amountRaw, capDurationSeconds, periodSeconds],
+  )
+  const capTotalValue = activeTotal !== null ? activeTotal : capDurationSeconds > 0 ? fmt(capBudgetRaw) : ''
+  function onTotalChange(raw: string) {
+    const v = dec(raw)
+    setActiveTotal(v)
+    try {
+      const budgetRaw = parseUnits(v, decimals)
+      if (amountRaw > 0n && budgetRaw > 0n) {
+        const secs = Number((budgetRaw * BigInt(periodSeconds)) / amountRaw)
+        const u = DURATION_UNITS.find((d) => d.key === capDurationUnit)!
+        setCapDurationN(trimNum(secs / u.seconds))
+      }
+    } catch {
+      /* partial input */
+    }
+  }
+  function onEndDateChange(v: string) {
+    const endSec = Math.floor(new Date(v).getTime() / 1000)
+    const nowSec = Math.floor(Date.now() / 1000)
+    if (Number.isFinite(endSec) && endSec > nowSec) {
+      const u = DURATION_UNITS.find((d) => d.key === capDurationUnit)!
+      setCapDurationN(trimNum((endSec - nowSec) / u.seconds))
+    }
+  }
+
+  // ---- Validation ----
+  const capValid = boundMode === 'revocation' || capDurationSeconds > 0
+  const ready = recipientValid && amountValid && tokenValid && capValid
+  const errs = {
+    beneficiary: touchedBene && !recipientValid,
+    amount: touchedAmount && !amountValid,
+    cap: touchedCap && boundMode === 'hardcap' && capDurationSeconds <= 0,
+  }
+  // A hard cap is defined relative to the charge, so an amount must exist first.
+  function onLimitChange(mode: BoundMode) {
+    if (mode === 'hardcap' && !amountValid) {
+      setRateHint(true)
+      amountRef.current?.focus()
+      return
+    }
+    setRateHint(false)
+    setBoundMode(mode)
+  }
+  function onSignClick() {
+    if (!ready) { setTouchedBene(true); setTouchedAmount(true); setTouchedCap(true); return }
+    handleSign()
+  }
+
+  const now = Math.floor(Date.now() / 1000)
+  const periodsCount = capDurationSeconds > 0 && periodSeconds > 0 ? capDurationSeconds / periodSeconds : 0
 
   // Live agreement preview — recomputed as the form changes, so the contract
   // hash the subscriber commits to is visible before signing.
   const preview = useMemo<AgreementDocument | null>(() => {
     if (!amountValid || !tokenValid || !recipientValid) return null
     try {
+      const nowSec = Math.floor(Date.now() / 1000)
+      const endDate = boundMode === 'hardcap' && capDurationSeconds > 0 ? nowSec + capDurationSeconds : null
       const terms = buildTerms({
         organization: { name: payeeName || 'Organization', recipient: recipient as Address, delegate: recipient as Address },
         subscriber: { label: 'Safe', account: safe.safeAddress as Address },
-        token: { address: tokenAddress as Address, symbol: tokenSymbol, decimals: tokenDecimals },
+        token: { address: tokenAddress as Address, symbol: tokenSymbol, decimals },
         amountPerPeriod: amount,
-        periodSeconds: Number(periodToSeconds(period)),
-        endDate: expiryEnabled && expiryDate ? Math.floor(new Date(expiryDate).getTime() / 1000) : null,
+        periodSeconds,
+        endDate,
       })
       return buildAgreementDocument({ id: 'preview', chainId: safe.chainId, terms })
     } catch {
       return null
     }
-  }, [amount, amountValid, tokenValid, recipientValid, tokenAddress, tokenDecimals, tokenSymbol, payeeName, recipient, period, expiryEnabled, expiryDate, safe.chainId, safe.safeAddress])
+  }, [amount, amountValid, tokenValid, recipientValid, tokenAddress, decimals, tokenSymbol, payeeName, recipient, periodSeconds, boundMode, capDurationSeconds, safe.chainId, safe.safeAddress])
 
   async function handleSign() {
     setSigning(true)
@@ -142,21 +268,23 @@ export default function CreateDelegation() {
       })) as Address
 
       const environment = getEnvironment(safe.chainId)
-      const now = Math.floor(Date.now() / 1000)
-      const expiryTs = expiryEnabled && expiryDate ? Math.floor(new Date(expiryDate).getTime() / 1000) : undefined
+      const nowSec = Math.floor(Date.now() / 1000)
+      // The hard cap is an end date enforced by the timestamp caveat; the budget is
+      // its implied total (amount × periods), informational only.
+      const expiryTs = boundMode === 'hardcap' && capDurationSeconds > 0 ? nowSec + capDurationSeconds : undefined
 
       // Pin the human-readable contract and bind the signature to it: salt = keccak256(terms).
       const terms = buildTerms({
         organization: { name: payeeName || 'Organization', recipient: recipient as Address, delegate },
         subscriber: { label: 'Safe', account: safe.safeAddress as Address },
-        token: { address: tokenAddress as Address, symbol: tokenSymbol, decimals: tokenDecimals },
+        token: { address: tokenAddress as Address, symbol: tokenSymbol, decimals },
         amountPerPeriod: amount,
-        periodSeconds: Number(periodToSeconds(period)),
-        startDate: now,
+        periodSeconds,
+        startDate: nowSec,
         endDate: expiryTs ?? null,
       })
       const agreement = buildAgreementDocument({
-        id: `sub_${now}_${(safe.safeAddress as string).slice(2, 10).toLowerCase()}`,
+        id: `sub_${nowSec}_${(safe.safeAddress as string).slice(2, 10).toLowerCase()}`,
         chainId: safe.chainId,
         terms,
       })
@@ -167,7 +295,7 @@ export default function CreateDelegation() {
       const salt = agreement.termsHash
 
       const additionalCaveats = expiryTs
-        ? [{ type: 'timestamp' as const, afterThreshold: now, beforeThreshold: expiryTs }]
+        ? [{ type: 'timestamp' as const, afterThreshold: nowSec, beforeThreshold: expiryTs }]
         : undefined
 
       const sdkDelegation = createDelegation({
@@ -177,9 +305,9 @@ export default function CreateDelegation() {
         scope: {
           type: 'erc20PeriodTransfer',
           tokenAddress: tokenAddress as Address,
-          periodAmount: parseUnits(amount, tokenDecimals),
-          periodDuration: Number(periodToSeconds(period)),
-          startDate: now,
+          periodAmount: parseUnits(amount, decimals),
+          periodDuration: periodSeconds,
+          startDate: nowSec,
         } as never,
         caveats: additionalCaveats as never,
         salt,
@@ -214,7 +342,7 @@ export default function CreateDelegation() {
           amount,
           period,
           tokenAddress: tokenAddress as Address,
-          expiryDate: expiryEnabled ? expiryDate : undefined,
+          expiryDate: expiryTs ? new Date(expiryTs * 1000).toISOString() : undefined,
           recipient: recipient as Address,
         },
       }
@@ -244,9 +372,18 @@ export default function CreateDelegation() {
     setRecipient('')
     setAmount('')
     setPeriod('monthly')
-    setExpiryEnabled(false)
-    setExpiryDate('')
+    setUseCustomToken(false)
+    setCustomToken('')
+    setTokenMeta(null)
+    setTokenStatus('idle')
+    setBoundMode('revocation')
+    setCapDurationN('')
+    setActiveTotal(null)
     setError(null)
+    setTouchedBene(false)
+    setTouchedAmount(false)
+    setTouchedCap(false)
+    setRateHint(false)
   }
 
   if (signed) {
@@ -267,7 +404,7 @@ export default function CreateDelegation() {
           </div>
 
           <div className="mt-5 rounded-xl bg-raised ring-1 ring-line divide-y divide-line">
-            <Row label="Payee"><Payee logo={((signed.meta.recipient ?? signed.delegation.delegate).slice(2, 4)).toUpperCase()} tint="#3B82F6" name={signed.meta.label} addr={short(signed.meta.recipient ?? signed.delegation.delegate)} size={32} /></Row>
+            <Row label="Beneficiary"><Payee logo={((signed.meta.recipient ?? signed.delegation.delegate).slice(2, 4)).toUpperCase()} tint="#3B82F6" name={signed.meta.label} addr={short(signed.meta.recipient ?? signed.delegation.delegate)} size={32} /></Row>
             <Row label="Charge"><span className="font-mono font-semibold text-ink">{signed.meta.amount} {signed.meta.tokenAddress ? 'USDC' : ''} / {signed.meta.period}</span></Row>
             <Row label="Contract hash"><Mono className="text-xs text-dim">{short(signed.meta.agreement!.termsHash)}</Mono></Row>
             <Row label="Delegation hash"><Mono className="text-xs text-dim">{short(signed.meta.delegationHash)}</Mono></Row>
@@ -297,174 +434,189 @@ export default function CreateDelegation() {
   }
 
   return (
-    <div className="rise grid grid-cols-1 lg:grid-cols-[1fr_minmax(300px,360px)] gap-6 items-start">
+    <div className="rise grid grid-cols-1 lg:grid-cols-[1fr_minmax(300px,360px)] gap-6 items-stretch">
       {/* Form */}
-      <div>
-        <h1 className="text-2xl font-extrabold tracking-tight text-ink">New subscription</h1>
-        <p className="text-dim text-sm mt-1">Sign once. The biller charges it every period, capped on-chain.</p>
-
+      <div className="space-y-5">
         {error && (
-          <div className="mt-4 rounded-xl px-3 py-2 text-sm text-danger" style={{ background: 'rgba(251,113,133,.10)', boxShadow: 'inset 0 0 0 1px rgba(251,113,133,.30)' }}>
+          <div className="rounded-xl px-3 py-2 text-sm text-danger" style={{ background: 'rgba(251,113,133,.10)', boxShadow: 'inset 0 0 0 1px rgba(251,113,133,.30)' }}>
             {error}
           </div>
         )}
 
-        <Card className="p-5 mt-5 space-y-5">
-          <Field label="Payee name" hint="Shown in your subscriptions list. Optional.">
-            <input type="text" placeholder="Acme Inc." value={payeeName} onChange={(e) => setPayeeName(e.target.value)} />
-          </Field>
+        {/* Block 0 — Sender (this Safe and the org that owns it) */}
+        <Block title="Sender">
           <Field label="Organization" hint="The org that owns this Safe — reuse one from Intuition or create it. Recorded as “org owns Safe”. Optional.">
             <OrgPicker safeAddress={safe.safeAddress as Address} safeChainId={safe.chainId} value={org} onChange={setOrg} />
           </Field>
+        </Block>
 
-          <Field label="Payee address" hint="The account allowed to charge (the delegate) and where funds are paid. Direct redeem — no relayer.">
-            <input type="text" placeholder="0x…" value={recipient} onChange={(e) => setRecipient(e.target.value)} />
+        {/* Block 1 — Beneficiary */}
+        <Block title="Beneficiary">
+          <Field label="Name" hint="Shown in your subscriptions list. Optional.">
+            <input type="text" placeholder="Acme Inc." value={payeeName} onChange={(e) => setPayeeName(e.target.value)} />
+          </Field>
+          <Field label="Address" required missing={errs.beneficiary}>
+            <input type="text" placeholder="0x…" value={recipient} onChange={(e) => setRecipient(e.target.value)} onBlur={() => setTouchedBene(true)} className={errs.beneficiary || (recipient && !recipientValid) ? 'ring-1 ring-danger' : ''} />
             {recipient && !recipientValid && <p className="text-xs text-danger mt-1">Invalid address</p>}
           </Field>
+        </Block>
 
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Amount per period">
+        {/* Block 2 — Payment details */}
+        <Block
+          title="Payment details"
+          action={
+            <Segmented
+              value={useCustomToken}
+              onChange={setUseCustomToken}
+              options={[{ key: false, label: <USDC size={15} /> }, { key: true, label: 'Custom ERC-20' }]}
+            />
+          }
+        >
+          {useCustomToken ? (
+            <div>
+              <input type="text" placeholder="Token 0x…" value={customToken} onChange={(e) => setCustomToken(e.target.value)} />
+              {tokenStatus === 'loading' && <p className="text-xs text-faint mt-1">Resolving token…</p>}
+              {tokenStatus === 'ok' && tokenMeta && (
+                <p className="text-xs text-faint mt-1"><span className="text-ink font-semibold">{tokenMeta.symbol}</span> · {tokenMeta.name} · {tokenMeta.decimals} decimals</p>
+              )}
+              {tokenStatus === 'error' && customToken && <p className="text-xs text-danger mt-1">Not a readable ERC-20 on {chainName(safe.chainId)} — make sure the token is deployed on this chain.</p>}
+            </div>
+          ) : (
+            <p className="text-xs text-faint"><span className="text-ink font-semibold">USDC</span> · USD Coin · 6 decimals</p>
+          )}
+
+          <Field label="Cap per period" required missing={errs.amount} hint="The most that can be charged in one period. It resets each period — unused amounts don't roll over.">
+            <div className="grid grid-cols-[1fr_140px] gap-2">
               <div className="relative">
-                <input type="number" placeholder="10" value={amount} onChange={(e) => setAmount(e.target.value)} min={0} step="any" className="pr-16" />
+                <input
+                  ref={amountRef}
+                  type="text" inputMode="decimal" placeholder="100"
+                  value={amount}
+                  onChange={(e) => setAmount(dec(e.target.value))}
+                  onFocus={(e) => { e.target.select(); setRateHint(false) }}
+                  onBlur={() => setTouchedAmount(true)}
+                  className={`pr-12 ${errs.amount ? 'ring-1 ring-danger' : ''}`}
+                />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">{tokenSymbol}</span>
               </div>
-            </Field>
-            <Field label="Period">
-              <select value={period} onChange={(e) => setPeriod(e.target.value as PeriodType)}>
-                {PERIODS.map((p) => <option key={p} value={p}>{p[0].toUpperCase() + p.slice(1)}</option>)}
+              <select value={period} onChange={(e) => setPeriod(e.target.value as PeriodType)} className="px-2">
+                {PERIOD_SCALES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
               </select>
-            </Field>
-          </div>
-
-          <Field label="Token">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setUseCustomToken(false)}
-                className={`flex-1 h-11 rounded-xl text-sm font-medium inline-flex items-center justify-center gap-2 transition ${!useCustomToken ? 'bg-raised text-ink ring-1 ring-line2' : 'text-dim hover:text-ink'}`}
-              >
-                <USDC size={15} />
-              </button>
-              <button
-                type="button"
-                onClick={() => setUseCustomToken(true)}
-                className={`flex-1 h-11 rounded-xl text-sm font-medium transition ${useCustomToken ? 'bg-raised text-ink ring-1 ring-line2' : 'text-dim hover:text-ink'}`}
-              >
-                Custom ERC-20
-              </button>
             </div>
-            {!useCustomToken && defaultUsdc && <p className="text-xs text-faint font-mono mt-2 truncate">{defaultUsdc}</p>}
-            {useCustomToken && (
-              <div className="grid grid-cols-[1fr_88px] gap-2 mt-2">
-                <input type="text" placeholder="Token 0x…" value={customToken} onChange={(e) => setCustomToken(e.target.value)} />
-                <input type="number" placeholder="6" value={customDecimals} onChange={(e) => setCustomDecimals(parseInt(e.target.value) || 6)} min={0} max={24} />
-              </div>
-            )}
+            {rateHint && <p className="text-xs text-pending mt-2">Set a cap first to fix a limit.</p>}
           </Field>
+        </Block>
 
-          <div>
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input type="checkbox" checked={expiryEnabled} onChange={(e) => setExpiryEnabled(e.target.checked)} />
-              <span className="text-sm text-dim flex items-center gap-1.5"><IconCal size={14} /> Set an end date</span>
-            </label>
-            {expiryEnabled && <input type="datetime-local" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} className="mt-2" />}
-          </div>
-        </Card>
+        {/* Block 3 — Security / limit */}
+        <Block
+          title="Security / limit"
+          action={
+            <Segmented
+              value={boundMode}
+              onChange={onLimitChange}
+              options={[{ key: 'revocation', label: 'Revocation only' }, { key: 'hardcap', label: 'Hard cap' }]}
+            />
+          }
+        >
+          {boundMode === 'hardcap' && (
+            <div className={`mt-1 grid grid-cols-2 rounded-xl ring-1 divide-x divide-line ${errs.cap ? 'ring-danger' : 'ring-line'}`}>
+              <div className="p-3">
+                <div className="text-[11px] text-faint mb-1.5 text-center uppercase tracking-wide">End date</div>
+                <input type="date" lang="en" value={capDurationSeconds > 0 ? toDateInput(now + capDurationSeconds) : ''} onChange={(e) => onEndDateChange(e.target.value)} onBlur={() => setTouchedCap(true)} className="w-full" />
+              </div>
+              <div className="p-3">
+                <div className="text-[11px] text-faint mb-1.5 text-center uppercase tracking-wide">Total budget</div>
+                <div className="relative">
+                  <input type="text" inputMode="decimal" placeholder="600" value={capTotalValue} onChange={(e) => onTotalChange(e.target.value)} onBlur={() => { setActiveTotal(null); setTouchedCap(true) }} className="w-full pr-12" />
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-faint">{tokenSymbol}</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </Block>
       </div>
 
-      {/* Live contract preview */}
-      <Card className="p-5 lg:sticky lg:top-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-xs font-semibold text-faint uppercase tracking-wide"><IconCube size={15} /> Contract preview</div>
-          {preview ? <StatusBadge status="pending" size="sm" /> : <span className="text-xs text-faint">Incomplete</span>}
-        </div>
+      {/* What the erc20PeriodTransfer caveat enforces on-chain — not a mirror of the form */}
+      <Card className="p-5 flex flex-col">
+        <div className="flex items-center gap-2 text-xs font-semibold text-faint uppercase tracking-wide"><IconLock size={15} /> Enforced on-chain</div>
 
-        {preview ? (
-          <div className="mt-4 space-y-3 text-sm">
-            <PreviewRow label="Subscriber"><Mono className="text-xs text-dim">{short(safe.safeAddress)}</Mono></PreviewRow>
-            <PreviewRow label="Payee">
-              <span className="text-ink truncate">{payeeName || 'Organization'}</span>
-              {recipientValid && <Mono className="text-[11px] text-faint block">{short(recipient)}</Mono>}
-            </PreviewRow>
-            <div className="rounded-xl bg-raised ring-1 ring-line p-3">
-              <div className="text-faint text-xs">Charges</div>
-              <div className="font-mono font-bold text-ink tnum mt-0.5" style={{ fontSize: 22 }}>
-                {amount} <span className="text-dim text-sm font-semibold">{tokenSymbol} / {period}</span>
-              </div>
-            </div>
-            <PreviewRow label={<span className="flex items-center gap-1"><IconLock size={12} /> On-chain cap</span>}>
-              <span className="font-mono text-ink">{amount} {tokenSymbol}</span>
-              <span className="text-faint text-[11px] block">resets every {period.replace('ly', '')} period</span>
-              <span className="text-faint text-[11px] block mt-1">Only token, amount and period are enforced on-chain. The payee address is set at charge time, not enforced by the caveat.</span>
-            </PreviewRow>
-            {expiryEnabled && expiryDate && (
-              <PreviewRow label="Ends"><span className="text-ink text-xs">{new Date(expiryDate).toLocaleString()}</span></PreviewRow>
+        <div className="mt-4 space-y-3 text-sm">
+          <PreviewRow label="Beneficiary">
+            {recipientValid ? <Mono className="text-xs text-dim">{short(recipient)}</Mono> : <span className={`text-[11px] ${errs.beneficiary ? 'text-danger' : 'text-faint'}`}>{errs.beneficiary ? 'address required' : 'not set'}</span>}
+          </PreviewRow>
+
+          <div className="rounded-xl bg-raised ring-1 ring-line p-3">
+            <div className="text-faint text-xs">Charge</div>
+            {amountValid ? (
+              <div className="font-mono font-bold text-ink tnum mt-0.5" style={{ fontSize: 20 }}>{trimAmount(amount)} <span className="text-dim text-sm font-semibold">{tokenSymbol} / {periodNoun(period)}</span></div>
+            ) : (
+              <div className={`text-sm font-semibold mt-0.5 ${errs.amount ? 'text-danger' : 'text-faint'}`}>{errs.amount ? 'amount required' : 'set a charge amount'}</div>
             )}
-            <div className="pt-3 border-t border-line">
-              <div className="flex items-center gap-1.5 text-xs text-faint"><IconHash size={12} /> Bound contract hash</div>
-              <Mono className="text-[11px] text-dim break-all mt-1 block">{preview.termsHash}</Mono>
-              <p className="text-[11px] text-faint mt-2 leading-relaxed">This hash becomes the delegation salt — your signature commits to the exact terms above.</p>
-            </div>
           </div>
-        ) : (
-          <p className="mt-6 text-sm text-dim leading-relaxed">Fill in an amount and a valid token to preview the subscription contract that gets pinned to IPFS and bound to your signature.</p>
-        )}
 
-        {preview && (
-          <div className="mt-5 pt-4 border-t border-line space-y-3">
-            {step === 'idle' ? (
+          <PreviewRow label="Cap">
+            {amountValid ? (
               <>
-                <div className="flex items-center gap-2 text-xs text-dim">
-                  <IconCube size={14} style={{ color: 'var(--accent)' }} /> Pinned to IPFS, hash bound to your signature.
-                </div>
-                <GaslessButton size="lg" onClick={handleSign} disabled={!canSign} className="w-full">
-                  Pin & sign
-                </GaslessButton>
-                <p className="text-[11px] text-faint text-center">1 signature · </p>
+                <span className="font-mono text-ink">{trimAmount(amount)} {tokenSymbol}</span>
+                <span className="text-faint text-[11px] block">resets each {periodNoun(period)}, never twice</span>
               </>
             ) : (
-              <div className="space-y-3 py-1">
-                <StepRow done={step === 'pinning' || step === 'signing'} active={step === 'building'} label="Building human-readable contract" />
-                <StepRow
-                  done={step === 'signing'}
-                  active={step === 'pinning'}
-                  label="Pinning to IPFS"
-                  sub={step === 'pinning' ? 'pinning…' : pinnedCid ? `CID ${short(pinnedCid)}` : undefined}
-                />
-                <StepRow active={step === 'signing'} label="Safe signature" sub={step === 'signing' ? 'waiting for signers…' : undefined} />
+              <span className="text-[11px] text-faint">per-period cap</span>
+            )}
+          </PreviewRow>
+
+          <PreviewRow label="Budget">
+            {boundMode === 'revocation' ? (
+              <span className="font-mono text-ink">Unlimited</span>
+            ) : capDurationSeconds > 0 && amountValid ? (
+              <>
+                <span className="font-mono text-ink">{fmt(capBudgetRaw)} {tokenSymbol}</span>
+                <span className="text-faint text-[11px] block">≈ {Math.round(periodsCount)} × {trimAmount(amount)} {tokenSymbol}, ends {dateStr(now + capDurationSeconds)}</span>
+              </>
+            ) : (
+              <span className={`text-[11px] ${errs.cap ? 'text-danger' : 'text-faint'}`}>{errs.cap ? 'cap required' : 'set an end date'}</span>
+            )}
+          </PreviewRow>
+
+          <PreviewRow label="Token">
+            <span className="text-ink text-xs">{tokenSymbol}</span>
+            {tokenValid && <Mono className="text-[10px] text-faint block">{short(tokenAddress as string)}</Mono>}
+          </PreviewRow>
+
+          <div className="pt-3 border-t border-line">
+            <p className="text-[11px] text-faint leading-relaxed">The exact terms the <a href="https://docs.metamask.io/smart-accounts-kit/reference/delegation/caveats#erc20periodtransfer" target="_blank" rel="noreferrer" className="text-[color:var(--accent)] hover:underline">erc20PeriodTransfer</a> caveat enforces: token, amount per period, period. Total budget is the implied cap until the end date; the beneficiary is chosen at charge time, not by the caveat.</p>
+            {preview && (
+              <div className="mt-2">
+                <div className="flex items-center gap-1.5 text-xs text-faint"><IconHash size={12} /> Bound contract hash</div>
+                <Mono className="text-[11px] text-dim break-all mt-1 block">{preview.termsHash}</Mono>
               </div>
             )}
           </div>
-        )}
+        </div>
+
+        <div className="mt-auto pt-4 border-t border-line space-y-3">
+          {step === 'idle' ? (
+            <>
+              <div className="flex items-center gap-2 text-xs text-dim">
+                <IconCube size={14} style={{ color: 'var(--accent)' }} /> Pinned to IPFS, hash bound to your signature.
+              </div>
+              <GaslessButton size="lg" onClick={onSignClick} disabled={signing} className="w-full">Pin &amp; sign</GaslessButton>
+              {!ready && <p className="text-[11px] text-faint text-center">Fill the required fields to sign.</p>}
+            </>
+          ) : (
+            <div className="space-y-3 py-1">
+              <StepRow done={step === 'pinning' || step === 'signing'} active={step === 'building'} label="Building human-readable contract" />
+              <StepRow
+                done={step === 'signing'}
+                active={step === 'pinning'}
+                label="Pinning to IPFS"
+                sub={step === 'pinning' ? 'pinning…' : pinnedCid ? `CID ${short(pinnedCid)}` : undefined}
+              />
+              <StepRow active={step === 'signing'} label="Safe signature" sub={step === 'signing' ? 'waiting for signers…' : undefined} />
+            </div>
+          )}
+        </div>
       </Card>
-    </div>
-  )
-}
-
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <label className="text-sm font-medium text-ink block mb-1.5">{label}</label>
-      {children}
-      {hint && <p className="text-xs text-faint mt-1">{hint}</p>}
-    </div>
-  )
-}
-
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-center justify-between gap-4 px-4 py-3">
-      <span className="text-sm text-faint">{label}</span>
-      <div className="text-right min-w-0">{children}</div>
-    </div>
-  )
-}
-
-function PreviewRow({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <div className="flex items-start justify-between gap-3">
-      <span className="text-xs text-faint mt-0.5">{label}</span>
-      <div className="text-right min-w-0">{children}</div>
     </div>
   )
 }
