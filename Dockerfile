@@ -21,7 +21,10 @@ ARG VITE_INTUITION_PUBLISHER_URL=/intuition
 ENV VITE_INTUITION_PUBLISHER_URL=$VITE_INTUITION_PUBLISHER_URL
 ARG VITE_INTUITION_PUBLISHER_SECRET
 ENV VITE_INTUITION_PUBLISHER_SECRET=$VITE_INTUITION_PUBLISHER_SECRET
-# Which Intuition network the Charge page reads (testnet preview / mainnet prod).
+# Build-time fallback for the Safe App's Intuition network. The runtime
+# INTUITION_NETWORK env var wins at container start (entrypoint writes it into
+# /safe-app/env.js) — so flipping testnet <-> mainnet needs no rebuild. This ARG
+# only matters for non-container builds / when no runtime config is injected.
 ARG VITE_INTUITION_NETWORK=testnet
 ENV VITE_INTUITION_NETWORK=$VITE_INTUITION_NETWORK
 RUN bun run build

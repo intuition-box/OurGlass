@@ -11,6 +11,8 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- Runtime network config; must load before the app module reads it. -->
+    <script src="/env.js"></script>
     <script type="module">
       import { Buffer } from 'buffer'
       import process from 'process'

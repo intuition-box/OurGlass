@@ -132,6 +132,24 @@ export function getIntuitionNetwork(network: IntuitionNetwork): IntuitionNetwork
   return INTUITION_NETWORKS[network]
 }
 
+/**
+ * The Intuition network the Safe App reads from.
+ *
+ * Resolved at runtime from `window.__OG__.network`, which the container
+ * entrypoint writes into `/safe-app/env.js` from the runtime
+ * `INTUITION_NETWORK` env var. Falls back to the build-time
+ * `VITE_INTUITION_NETWORK` (dev + when no runtime config is injected). Anything
+ * other than the literal `'mainnet'` resolves to testnet.
+ *
+ * Runtime resolution is deliberate: the static bundle would otherwise bake the
+ * network at `vite build` time, forcing a rebuild to switch testnet <-> mainnet.
+ */
+export function resolveIntuitionNetwork(): IntuitionNetwork {
+  const runtime = typeof window !== 'undefined' ? window.__OG__?.network : undefined
+  const value = runtime ?? import.meta.env.VITE_INTUITION_NETWORK
+  return value === 'mainnet' ? 'mainnet' : 'testnet'
+}
+
 /** Link to an atom on the Intuition portal (dev portal for testnet). */
 export function portalAtomUrl(atomId: Hex, network: IntuitionNetwork): string {
   const base = network === 'mainnet'

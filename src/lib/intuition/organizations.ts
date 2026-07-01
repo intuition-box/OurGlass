@@ -1,6 +1,6 @@
 import type { Address, Hex } from 'viem'
 import { caip10Uri } from './discover'
-import type { IntuitionNetwork } from './network'
+import { resolveIntuitionNetwork, type IntuitionNetwork } from './network'
 
 /**
  * Read helpers for the organization picker on the create flows: search existing
@@ -28,7 +28,7 @@ const READ: Record<IntuitionNetwork, OrgReadConfig> = {
 }
 
 function activeRead(): OrgReadConfig {
-  return import.meta.env.VITE_INTUITION_NETWORK === 'mainnet' ? READ.mainnet : READ.testnet
+  return READ[resolveIntuitionNetwork()]
 }
 
 /** The Intuition network the app reads from (for portal links). */
